@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>לימוד מילים באנגלית</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📘 אתר לימוד מילים באנגלית</h1>
+
+    <h2>➕ יצירת רשימה חדשה</h2>
+    <input type="text" id="listName" placeholder="שם הרשימה">
+    <button onclick="createList()">צור רשימה</button>
+
+    <h2>📋 הרשימות שלך</h2>
+    <div id="lists"></div>
+  </div>
+
+  <script>
+    async function loadLists() {
+      const res = await fetch("/api/lists");
+      const data = await res.json();
+      const div = document.getElementById("lists");
+      div.innerHTML = "";
+      Object.keys(data).forEach(name => {
+        const ul = document.createElement("ul");
+        data[name].forEach(w => {
+          const li = document.createElement("li");
+          li.textContent = `${w.he} - ${w.en}`;
+          ul.appendChild(li);
+        });
+        const h3 = document.createElement("h3");
+        h3.textContent = name;
+        div.appendChild(h3);
+        div.appendChild(ul);
+      });
+    }
+
+    async function createList() {
+      const name = document.getElementById("listName").value.trim();
+      if (!name) return alert("חייב שם לרשימה");
+      const words = [];
+      for (let i = 0; i < 3; i++) {
+        const he = prompt("מילה בעברית:");
+        const en = prompt("תרגום לאנגלית:");
+        if (!he || !en) break;
+        words.push({ he, en });
+      }
+      await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, words })
+      });
+      await loadLists();
+    }
+
+    loadLists();
+  </script>
+</body>
+</html>
