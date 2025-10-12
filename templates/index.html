@@ -36,6 +36,7 @@
       </div>
 
       <ul id="words"></ul>
+
       <button class="secondary" onclick="backToLists()">חזרה לרשימות</button>
     </section>
 
@@ -132,7 +133,12 @@
     ul.innerHTML = "";
     currentWords.forEach(w => {
       const li = document.createElement("li");
-      li.textContent = `${w.en} — ${w.he} (✅${w.ok||0} ❌${w.bad||0})`;
+      li.innerHTML = `
+        <span>${w.en} — ${w.he}</span>
+        <span class="chip">✅ ${w.ok||0}</span>
+        <span class="chip">❌ ${w.bad||0}</span>
+        <button class="danger" onclick="deleteWord('${w.en}', '${w.he}')">מחק</button>
+      `;
       ul.appendChild(li);
     });
   }
@@ -151,6 +157,16 @@
     if (!js.ok) return alert(js.error || "שגיאה");
     document.getElementById("en").value = "";
     document.getElementById("he").value = "";
+    refreshWords();
+    loadLists();
+  }
+
+  async function deleteWord(en, he) {
+    if (!confirm(`למחוק את המילה "${en}"?`)) return;
+    const url = `/api/words?list=${encodeURIComponent(currentList)}&en=${encodeURIComponent(en)}&he=${encodeURIComponent(he)}`;
+    const r = await fetch(url, { method: "DELETE" });
+    const js = await r.json();
+    if (!js.ok) return alert(js.error || "שגיאה במחיקה");
     refreshWords();
     loadLists();
   }
