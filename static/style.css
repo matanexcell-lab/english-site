@@ -1,27 +1,48 @@
 body {
+  font-family: Arial, sans-serif;
+  background: #f7f7f7;
+  margin: 0;
+  padding: 20px;
   direction: rtl;
-  background: #f5f6f8;
-  font-family: Arial;
 }
-
 .container {
-  max-width: 600px;
+  max-width: 900px;
   margin: auto;
-  background: white;
+  background: #fff;
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 0 5px #ccc;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
 }
-
+h1, h2 { text-align: center; margin-top: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+input { padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; }
 button {
-  margin: 5px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 5px;
+  color: #fff;
+  border: none; border-radius: 6px; cursor: pointer;
 }
-
-#quiz {
-  margin-top: 20px;
+button.secondary { background: #6c757d; }
+button.danger { background: #dc3545; }
+.list-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  background: #fafafa;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #eee;
 }
+.list-name { font-weight: bold; }
+.list-stats { color: #555; }
+.list-actions button { margin-inline-start: 6px; }
+ul { list-style: none; padding: 0; }
+li { display: flex; gap: 8px; align-items: center; justify-content: space-between;
+     padding: 8px; border-bottom: 1px solid #eee; }
+.chip { background: #efefef; padding: 3px 6px; border-radius: 12px; font-size: 12px; }
+.card { background:#fafafa; border:1px solid #eee; border-radius:10px; padding:16px; }
+#qPrompt { font-size: 20px; margin: 8px 0; }
+#qNumber { color:#444; margin-bottom: 6px; }
+#qFeedback { margin-top: 8px; font-weight: bold; }
