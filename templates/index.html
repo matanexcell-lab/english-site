@@ -36,7 +36,6 @@
       </div>
 
       <ul id="words"></ul>
-
       <button class="secondary" onclick="backToLists()">חזרה לרשימות</button>
     </section>
 
@@ -129,14 +128,17 @@
     const r = await fetch(`/api/list/${encodeURIComponent(currentList)}`);
     const js = await r.json();
     currentWords = js.words || [];
+
     const ul = document.getElementById("words");
     ul.innerHTML = "";
     currentWords.forEach(w => {
+      const ratio = w.ratio !== undefined ? w.ratio.toFixed(2) : (w.bad / (w.ok + 1)).toFixed(2);
       const li = document.createElement("li");
       li.innerHTML = `
         <span>${w.en} — ${w.he}</span>
-        <span class="chip">✅ ${w.ok||0}</span>
-        <span class="chip">❌ ${w.bad||0}</span>
+        <span class="chip">✅ ${w.ok || 0}</span>
+        <span class="chip">❌ ${w.bad || 0}</span>
+        <span class="chip">🔥 יחס: ${ratio}</span>
         <button class="danger" onclick="deleteWord('${w.en}', '${w.he}')">מחק</button>
       `;
       ul.appendChild(li);
@@ -188,7 +190,13 @@
     currentWords = js.words || [];
     if (currentWords.length === 0) return alert("אין מילים ברשימה הזו!");
 
-    quizOrder = [...currentWords.keys()];
+    // מיין לפי יחס יורד (קשות קודם)
+    quizOrder = [...currentWords.keys()].sort((a, b) => {
+      const ratioA = currentWords[a].ratio ?? (currentWords[a].bad / (currentWords[a].ok + 1));
+      const ratioB = currentWords[b].ratio ?? (currentWords[b].bad / (currentWords[b].ok + 1));
+      return ratioB - ratioA;
+    });
+
     quizIndex = 0;
     document.getElementById("qListName").innerText = `${listName} (${mode === 'en2he' ? 'EN→HE' : 'HE→EN'})`;
     document.getElementById("quiz").style.display = "";
@@ -242,6 +250,7 @@
   function showManage() {
     document.getElementById("quiz").style.display = "none";
     document.getElementById("manage").style.display = "";
+    refreshWords();
   }
 </script>
 </body>
