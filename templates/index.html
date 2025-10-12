@@ -14,7 +14,7 @@
     <section>
       <h2>➕ יצירת רשימה חדשה</h2>
       <input id="newListName" placeholder="שם הרשימה" />
-      <button onclick="createList()">צור רשימה</button>
+      <button id="createBtn">צור רשימה</button>
     </section>
 
     <!-- כל הרשימות -->
@@ -35,14 +35,6 @@
         <button onclick="addWord()">הוסף מילה</button>
       </div>
 
-      <div class="row">
-        <form id="importForm" onsubmit="importFile(event)">
-          <input type="hidden" name="list" id="importListName" />
-          <input type="file" name="file" accept=".xlsx,.xls,.csv" />
-          <button type="submit">ייבוא מאקסל/CSV</button>
-        </form>
-      </div>
-
       <ul id="words"></ul>
       <button onclick="startQuiz('en2he')">תרגול אנגלית ➝ עברית</button>
       <button onclick="startQuiz('he2en')">תרגול עברית ➝ אנגלית</button>
@@ -54,121 +46,121 @@
     <!-- חידון -->
     <section id="quiz" style="display:none;">
       <h2>חידון: <span id="qListName"></span></h2>
-      <div id="qInfo"></div>
-      <div id="qCard" class="card">
-        <div id="qNumber"></div>
-        <div id="qPrompt"></div>
-        <input id="qAnswer" placeholder="התשובה שלך" onkeydown="if(event.key==='Enter') checkAnswer()" />
-        <div class="row">
-          <button onclick="checkAnswer()">בדוק</button>
-          <button class="secondary" onclick="showManage()">סיום חידון</button>
-        </div>
-        <div id="qFeedback"></div>
-      </div>
+      <div id="qNumber"></div>
+      <div id="qPrompt"></div>
+      <input id="qAnswer" placeholder="התשובה שלך" onkeydown="if(event.key==='Enter') checkAnswer()" />
+      <button onclick="checkAnswer()">בדוק</button>
+      <div id="qFeedback"></div>
+      <button class="secondary" onclick="showManage()">סיום חידון</button>
     </section>
   </div>
 
 <script>
-  // ------- state -------
-  let currentList = null;
-  let currentWords = [];
-  let quizOrder = [];
-  let quizIndex = 0;
-  let quizMode = 'en2he'; // or 'he2en'
+  // ===== טעינה ראשונית =====
+  document.addEventListener("DOMContentLoaded", () => {
+    loadLists();
+    document.getElementById("createBtn").addEventListener("click", createList);
+  });
 
-  // ------- lists -------
+  // ===== רשימות =====
   async function loadLists() {
-    const r = await fetch('/api/lists');
-    const js = await r.json();
-    const cont = document.getElementById('lists');
-    cont.innerHTML = '';
-    js.lists.forEach(li => {
-      const row = document.createElement('div');
-      row.className = 'list-row';
-      row.innerHTML = `
-        <div class="list-name">${li.name}</div>
-        <div class="list-stats">מילים: ${li.count} | נכון: ${li.ok} | לא נכון: ${li.bad}</div>
-        <div class="list-actions">
-          <button onclick="manage('${li.name}')">נהל</button>
-          <button onclick="startQuickQuiz('${li.name}')">תרגל</button>
-        </div>
-      `;
-      cont.appendChild(row);
-    });
+    try {
+      const r = await fetch("/api/lists");
+      if (!r.ok) throw new Error("בעיה בתקשורת עם השרת");
+      const js = await r.json();
+      const cont = document.getElementById("lists");
+      cont.innerHTML = "";
+      js.lists.forEach(li => {
+        const row = document.createElement("div");
+        row.className = "list-row";
+        row.innerHTML = `
+          <div class="list-name">${li.name}</div>
+          <div class="list-stats">מילים: ${li.count} | ✅ ${li.ok} | ❌ ${li.bad}</div>
+          <div class="list-actions">
+            <button onclick="manage('${li.name}')">נהל</button>
+          </div>
+        `;
+        cont.appendChild(row);
+      });
+    } catch (err) {
+      alert("שגיאה בטעינת רשימות:\n" + err.message);
+    }
   }
 
   async function createList() {
-    const name = document.getElementById('newListName').value.trim();
-    if (!name) return alert('נא להזין שם רשימה');
-    const r = await fetch('/api/lists', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({name})
-    });
-    const js = await r.json();
-    if (!js.ok) return alert(js.error || 'שגיאה');
-    document.getElementById('newListName').value = '';
-    loadLists();
+    const name = document.getElementById("newListName").value.trim();
+    if (!name) return alert("נא להזין שם לרשימה");
+
+    try {
+      const r = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+
+      const js = await r.json();
+      if (!js.ok) {
+        alert(js.error || "שגיאה בהוספת הרשימה");
+        return;
+      }
+
+      document.getElementById("newListName").value = "";
+      alert("הרשימה נוספה בהצלחה!");
+      loadLists();
+    } catch (err) {
+      alert("שגיאה בעת יצירת רשימה:\n" + err.message);
+    }
   }
 
-  // ------- manage -------
+  // ===== ניהול מילים =====
+  let currentList = null;
+  let currentWords = [];
+
   async function manage(name) {
     currentList = name;
-    document.getElementById('mListName').innerText = name;
-    document.getElementById('importListName').value = name;
+    document.getElementById("mListName").innerText = name;
+    document.getElementById("manage").style.display = "";
+    document.getElementById("quiz").style.display = "none";
     await refreshWords();
-    document.getElementById('manage').style.display = '';
-    document.getElementById('quiz').style.display = 'none';
-    window.scrollTo({top:0, behavior:'smooth'});
   }
 
   async function refreshWords() {
     const r = await fetch(`/api/list/${encodeURIComponent(currentList)}`);
     const js = await r.json();
-    if (!js.ok) return alert('שגיאה בטעינת מילים');
     currentWords = js.words || [];
-    const ul = document.getElementById('words');
-    ul.innerHTML = '';
+    const ul = document.getElementById("words");
+    ul.innerHTML = "";
     currentWords.forEach(w => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <span>${w.en} — ${w.he}</span>
-        <span class="chip">✔ ${w.ok || 0}</span>
-        <span class="chip">✖ ${w.bad || 0}</span>
-        <button class="danger" onclick="delWord('${w.en.replaceAll("'","\\'")}', '${w.he.replaceAll("'","\\'")}')">מחק</button>
-      `;
+      const li = document.createElement("li");
+      li.textContent = `${w.en} — ${w.he} (✅${w.ok||0} ❌${w.bad||0})`;
       ul.appendChild(li);
     });
   }
 
   async function addWord() {
-    const en = document.getElementById('en').value.trim();
-    const he = document.getElementById('he').value.trim();
-    if (!en || !he) return alert('נא למלא את שתי השדות');
-    const r = await fetch('/api/words', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({list: currentList, en, he})
+    const en = document.getElementById("en").value.trim();
+    const he = document.getElementById("he").value.trim();
+    if (!en || !he) return alert("נא למלא את שתי השדות");
+
+    const r = await fetch("/api/words", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ list: currentList, en, he })
     });
     const js = await r.json();
-    if (!js.ok) return alert(js.error || 'שגיאה');
-    document.getElementById('en').value = '';
-    document.getElementById('he').value = '';
+    if (!js.ok) return alert(js.error || "שגיאה");
+    document.getElementById("en").value = "";
+    document.getElementById("he").value = "";
     refreshWords();
     loadLists();
   }
 
-  async function delWord(en, he) {
-    const url = `/api/words?list=${encodeURIComponent(currentList)}&en=${encodeURIComponent(en)}&he=${encodeURIComponent(he)}`;
-    const r = await fetch(url, {method:'DELETE'});
-    const js = await r.json();
-    if (!js.ok) return alert(js.error || 'שגיאה');
-    refreshWords();
-    loadLists();
-  }
-
+  // ===== חזרה =====
   function backToLists() {
-    document.getElementById('manage').style.display = 'none';
-    document.getElementById('quiz').style.display = 'none';
+    document.getElementById("manage").style.display = "none";
+    document.getElementById("quiz").style.display = "none";
     loadLists();
   }
+</script>
+</body>
+</html>
