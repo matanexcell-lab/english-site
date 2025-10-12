@@ -62,54 +62,38 @@
 
   // ===== רשימות =====
   async function loadLists() {
-    try {
-      const r = await fetch("/api/lists");
-      if (!r.ok) throw new Error("בעיה בתקשורת עם השרת");
-      const js = await r.json();
-      const cont = document.getElementById("lists");
-      cont.innerHTML = "";
-      js.lists.forEach(li => {
-        const row = document.createElement("div");
-        row.className = "list-row";
-        row.innerHTML = `
-          <div class="list-name">${li.name}</div>
-          <div class="list-stats">מילים: ${li.count} | ✅ ${li.ok} | ❌ ${li.bad}</div>
-          <div class="list-actions">
-            <button onclick="manage('${li.name}')">נהל</button>
-            <button onclick="startQuickQuiz('${li.name}', 'en2he')">תרגול EN→HE</button>
-            <button onclick="startQuickQuiz('${li.name}', 'he2en')">תרגול HE→EN</button>
-          </div>
-        `;
-        cont.appendChild(row);
-      });
-    } catch (err) {
-      alert("שגיאה בטעינת רשימות:\n" + err.message);
-    }
+    const r = await fetch("/api/lists");
+    const js = await r.json();
+    const cont = document.getElementById("lists");
+    cont.innerHTML = "";
+    js.lists.forEach(li => {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML = `
+        <div class="list-name">${li.name}</div>
+        <div class="list-stats">מילים: ${li.count} | ✅ ${li.ok} | ❌ ${li.bad}</div>
+        <div class="list-actions">
+          <button onclick="manage('${li.name}')">נהל</button>
+          <button onclick="startQuickQuiz('${li.name}', 'en2he')">תרגול EN→HE</button>
+          <button onclick="startQuickQuiz('${li.name}', 'he2en')">תרגול HE→EN</button>
+        </div>
+      `;
+      cont.appendChild(row);
+    });
   }
 
   async function createList() {
     const name = document.getElementById("newListName").value.trim();
     if (!name) return alert("נא להזין שם לרשימה");
-
-    try {
-      const r = await fetch("/api/lists", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
-      });
-
-      const js = await r.json();
-      if (!js.ok) {
-        alert(js.error || "שגיאה בהוספת הרשימה");
-        return;
-      }
-
-      document.getElementById("newListName").value = "";
-      alert("הרשימה נוספה בהצלחה!");
-      loadLists();
-    } catch (err) {
-      alert("שגיאה בעת יצירת רשימה:\n" + err.message);
-    }
+    const r = await fetch("/api/lists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const js = await r.json();
+    if (!js.ok) return alert(js.error || "שגיאה");
+    document.getElementById("newListName").value = "";
+    loadLists();
   }
 
   // ===== ניהול מילים =====
@@ -132,13 +116,13 @@
     const ul = document.getElementById("words");
     ul.innerHTML = "";
     currentWords.forEach(w => {
-      const ratio = w.ratio !== undefined ? w.ratio.toFixed(2) : (w.bad / (w.ok + 1)).toFixed(2);
+      const ratioText = w.ratio === Infinity ? "∞" : w.ratio.toFixed(2);
       const li = document.createElement("li");
       li.innerHTML = `
         <span>${w.en} — ${w.he}</span>
         <span class="chip">✅ ${w.ok || 0}</span>
         <span class="chip">❌ ${w.bad || 0}</span>
-        <span class="chip">🔥 יחס: ${ratio}</span>
+        <span class="chip">🔥 יחס: ${ratioText}</span>
         <button class="danger" onclick="deleteWord('${w.en}', '${w.he}')">מחק</button>
       `;
       ul.appendChild(li);
@@ -149,7 +133,6 @@
     const en = document.getElementById("en").value.trim();
     const he = document.getElementById("he").value.trim();
     if (!en || !he) return alert("נא למלא את שתי השדות");
-
     const r = await fetch("/api/words", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -164,16 +147,15 @@
   }
 
   async function deleteWord(en, he) {
-    if (!confirm(`למחוק את המילה "${en}"?`)) return;
+    if (!confirm(`למחוק את "${en}"?`)) return;
     const url = `/api/words?list=${encodeURIComponent(currentList)}&en=${encodeURIComponent(en)}&he=${encodeURIComponent(he)}`;
     const r = await fetch(url, { method: "DELETE" });
     const js = await r.json();
-    if (!js.ok) return alert(js.error || "שגיאה במחיקה");
+    if (!js.ok) return alert(js.error || "שגיאה");
     refreshWords();
     loadLists();
   }
 
-  // ===== חזרה =====
   function backToLists() {
     document.getElementById("manage").style.display = "none";
     document.getElementById("quiz").style.display = "none";
@@ -186,15 +168,16 @@
     quizMode = mode;
     const r = await fetch(`/api/list/${encodeURIComponent(listName)}`);
     const js = await r.json();
-    if (!js.ok) return alert("שגיאה בטעינת הרשימה");
     currentWords = js.words || [];
     if (currentWords.length === 0) return alert("אין מילים ברשימה הזו!");
 
-    // מיין לפי יחס יורד (קשות קודם)
+    // מיין לפי יחס (∞ הכי קשה)
     quizOrder = [...currentWords.keys()].sort((a, b) => {
-      const ratioA = currentWords[a].ratio ?? (currentWords[a].bad / (currentWords[a].ok + 1));
-      const ratioB = currentWords[b].ratio ?? (currentWords[b].bad / (currentWords[b].ok + 1));
-      return ratioB - ratioA;
+      const ra = currentWords[a].ratio;
+      const rb = currentWords[b].ratio;
+      const va = (ra === Infinity) ? 1e18 : ra;
+      const vb = (rb === Infinity) ? 1e18 : rb;
+      return vb - va;
     });
 
     quizIndex = 0;
@@ -219,12 +202,9 @@
     document.getElementById("qNumber").innerText = `שאלה ${quizIndex + 1} מתוך ${quizOrder.length}`;
     document.getElementById("qAnswer").value = "";
     document.getElementById("qAnswer").focus();
-
-    if (quizMode === "en2he") {
-      document.getElementById("qPrompt").innerText = `תרגם לעברית: ${w.en}`;
-    } else {
-      document.getElementById("qPrompt").innerText = `Translate to English: ${w.he}`;
-    }
+    document.getElementById("qPrompt").innerText = quizMode === "en2he"
+      ? `תרגם לעברית: ${w.en}`
+      : `Translate to English: ${w.he}`;
     document.getElementById("qFeedback").innerText = "";
   }
 
@@ -235,7 +215,9 @@
     const correct = quizMode === "en2he" ? w.he : w.en;
     const isCorrect = ans.toLowerCase() === correct.toLowerCase();
 
-    document.getElementById("qFeedback").innerText = isCorrect ? "✅ נכון!" : `❌ לא נכון. התשובה: ${correct}`;
+    document.getElementById("qFeedback").innerText = isCorrect
+      ? "✅ נכון!"
+      : `❌ לא נכון. התשובה: ${correct}`;
 
     await fetch("/api/answer", {
       method: "POST",
