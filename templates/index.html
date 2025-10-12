@@ -36,8 +36,6 @@
       </div>
 
       <ul id="words"></ul>
-      <button onclick="startQuiz('en2he')">תרגול אנגלית ➝ עברית</button>
-      <button onclick="startQuiz('he2en')">תרגול עברית ➝ אנגלית</button>
       <button class="secondary" onclick="backToLists()">חזרה לרשימות</button>
     </section>
 
@@ -78,6 +76,8 @@
           <div class="list-stats">מילים: ${li.count} | ✅ ${li.ok} | ❌ ${li.bad}</div>
           <div class="list-actions">
             <button onclick="manage('${li.name}')">נהל</button>
+            <button onclick="startQuickQuiz('${li.name}', 'en2he')">תרגול EN→HE</button>
+            <button onclick="startQuickQuiz('${li.name}', 'he2en')">תרגול HE→EN</button>
           </div>
         `;
         cont.appendChild(row);
@@ -160,6 +160,72 @@
     document.getElementById("manage").style.display = "none";
     document.getElementById("quiz").style.display = "none";
     loadLists();
+  }
+
+  // ===== חידון =====
+  async function startQuickQuiz(listName, mode) {
+    currentList = listName;
+    quizMode = mode;
+    const r = await fetch(`/api/list/${encodeURIComponent(listName)}`);
+    const js = await r.json();
+    if (!js.ok) return alert("שגיאה בטעינת הרשימה");
+    currentWords = js.words || [];
+    if (currentWords.length === 0) return alert("אין מילים ברשימה הזו!");
+
+    quizOrder = [...currentWords.keys()];
+    quizIndex = 0;
+    document.getElementById("qListName").innerText = `${listName} (${mode === 'en2he' ? 'EN→HE' : 'HE→EN'})`;
+    document.getElementById("quiz").style.display = "";
+    document.getElementById("manage").style.display = "none";
+    showQuestion();
+  }
+
+  let quizMode = "en2he";
+  let quizOrder = [];
+  let quizIndex = 0;
+
+  function showQuestion() {
+    if (quizIndex >= quizOrder.length) {
+      document.getElementById("qPrompt").innerText = "סיימת את החידון! 🎉";
+      document.getElementById("qNumber").innerText = "";
+      document.getElementById("qFeedback").innerText = "";
+      return;
+    }
+    const w = currentWords[quizOrder[quizIndex]];
+    document.getElementById("qNumber").innerText = `שאלה ${quizIndex + 1} מתוך ${quizOrder.length}`;
+    document.getElementById("qAnswer").value = "";
+    document.getElementById("qAnswer").focus();
+
+    if (quizMode === "en2he") {
+      document.getElementById("qPrompt").innerText = `תרגם לעברית: ${w.en}`;
+    } else {
+      document.getElementById("qPrompt").innerText = `Translate to English: ${w.he}`;
+    }
+    document.getElementById("qFeedback").innerText = "";
+  }
+
+  async function checkAnswer() {
+    if (quizIndex >= quizOrder.length) return;
+    const w = currentWords[quizOrder[quizIndex]];
+    const ans = document.getElementById("qAnswer").value.trim();
+    const correct = quizMode === "en2he" ? w.he : w.en;
+    const isCorrect = ans.toLowerCase() === correct.toLowerCase();
+
+    document.getElementById("qFeedback").innerText = isCorrect ? "✅ נכון!" : `❌ לא נכון. התשובה: ${correct}`;
+
+    await fetch("/api/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ list: currentList, en: w.en, he: w.he, correct: isCorrect })
+    });
+
+    quizIndex++;
+    setTimeout(() => showQuestion(), 700);
+  }
+
+  function showManage() {
+    document.getElementById("quiz").style.display = "none";
+    document.getElementById("manage").style.display = "";
   }
 </script>
 </body>
