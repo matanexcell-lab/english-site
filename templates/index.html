@@ -1,171 +1,161 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<title>אתר לימוד מילים באנגלית 📘</title>
-<link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <title>📘 אתר לימוד מילים באנגלית</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+  let currentList = null;
+  let allLists = {};
+
+  async function loadLists() {
+    const res = await fetch('/api/lists');
+    allLists = await res.json();
+    renderLists();
+  }
+
+  function renderLists() {
+    const container = document.getElementById("lists");
+    container.innerHTML = "";
+    for (const [name, words] of Object.entries(allLists)) {
+      const correct = words.reduce((a,w)=>a+(w.correct||0),0);
+      const wrong = words.reduce((a,w)=>a+(w.wrong||0),0);
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <h3>${name}</h3>
+        <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
+        <button onclick="manageList('${name}')">נהל</button>
+        <button onclick="startQuiz('${name}','EN2HE')">תרגול EN→HE</button>
+        <button onclick="startQuiz('${name}','HE2EN')">תרגול HE→EN</button>
+      `;
+      container.appendChild(div);
+    }
+  }
+
+  function manageList(name) {
+    currentList = name;
+    const list = allLists[name];
+    const area = document.getElementById("manageArea");
+    area.innerHTML = `<h3>ניהול רשימה: ${name}</h3>`;
+
+    list.forEach((w, i) => {
+      const ratio = w.wrong ? (w.wrong / (w.correct || 1)).toFixed(2) : 0;
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <div id="row-${i}">
+          🔥 יחס: ${ratio}
+          ❌ ${w.wrong || 0} ✅ ${w.correct || 0}
+          <span>— ${w.en} — ${w.he}</span>
+          <button onclick="editWord(${i})">✏️ ערוך</button>
+          <button onclick="deleteWord(${i})" style="background:red;color:white;">מחק</button>
+        </div>
+      `;
+      area.appendChild(div);
+    });
+
+    area.innerHTML += `
+      <br><input id="newEn" placeholder="English">
+      <input id="newHe" placeholder="עברית">
+      <button onclick="addWord()">הוסף מילה</button>
+      <br><button onclick="backToLists()">חזרה לרשימות</button>
+    `;
+
+    document.getElementById("main").style.display = "none";
+    area.style.display = "block";
+  }
+
+  function editWord(index) {
+    const list = allLists[currentList];
+    const word = list[index];
+    const div = document.getElementById(`row-${index}`);
+    div.innerHTML = `
+      <input id="editEn-${index}" value="${word.en}">
+      <input id="editHe-${index}" value="${word.he}">
+      ✅ <input id="editCorrect-${index}" type="number" value="${word.correct || 0}" min="0" style="width:40px;">
+      ❌ <input id="editWrong-${index}" type="number" value="${word.wrong || 0}" min="0" style="width:40px;">
+      <button onclick="saveEdit(${index})">💾 שמור</button>
+      <button onclick="manageList('${currentList}')">ביטול</button>
+    `;
+  }
+
+  function saveEdit(index) {
+    const en = document.getElementById(`editEn-${index}`).value.trim();
+    const he = document.getElementById(`editHe-${index}`).value.trim();
+    const correct = parseInt(document.getElementById(`editCorrect-${index}`).value) || 0;
+    const wrong = parseInt(document.getElementById(`editWrong-${index}`).value) || 0;
+    allLists[currentList][index] = { en, he, correct, wrong };
+    saveData();
+    manageList(currentList);
+  }
+
+  function addWord() {
+    const en = document.getElementById("newEn").value.trim();
+    const he = document.getElementById("newHe").value.trim();
+    if (!en || !he) return alert("נא למלא את שתי השדות");
+    allLists[currentList].push({ en, he, correct: 0, wrong: 0 });
+    saveData();
+    manageList(currentList);
+  }
+
+  function deleteWord(index) {
+    if (!confirm("למחוק מילה זו?")) return;
+    allLists[currentList].splice(index, 1);
+    saveData();
+    manageList(currentList);
+  }
+
+  async function saveData() {
+    await fetch('/api/lists', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: currentList, words: allLists[currentList] })
+    });
+    loadLists();
+  }
+
+  function backToLists() {
+    document.getElementById("manageArea").style.display = "none";
+    document.getElementById("main").style.display = "block";
+  }
+
+  async function importExcel() {
+    const fileInput = document.getElementById("excelFile");
+    const file = fileInput.files[0];
+    if (!file) return alert("בחר קובץ קודם");
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/import_excel", { method: "POST", body: formData });
+    const msg = await res.text();
+    alert(msg);
+    loadLists();
+  }
+
+  window.onload = loadLists;
+  </script>
 </head>
 <body>
-<div class="container">
-  <h1>אתר לימוד מילים באנגלית 📘</h1>
+  <div id="main" class="container">
+    <h1>📘 אתר לימוד מילים באנגלית</h1>
 
-  <h3>➕ יצירת רשימה חדשה</h3>
-  <input id="newListName" placeholder="שם הרשימה">
-  <button onclick="createList()">צור רשימה</button>
+    <div>
+      <h3>➕ יצירת רשימה חדשה</h3>
+      <input id="listName" placeholder="שם הרשימה">
+      <button onclick="
+        const name = listName.value.trim();
+        if(!name) return alert('הכנס שם לרשימה');
+        allLists[name] = [];
+        saveData();
+      ">צור רשימה</button>
 
-  <h3>📥 ייבוא מקובץ Excel</h3>
-  <input type="file" id="excelFile" accept=".xlsx,.xls" />
-  <button onclick="importExcel()">ייבא קובץ</button>
+      <h3>📤 ייבוא קובץ Excel</h3>
+      <input type="file" id="excelFile" accept=".xlsx">
+      <button onclick="importExcel()">ייבא קובץ</button>
+    </div>
 
-  <h3>📤 ייצוא רשימות לאקסל</h3>
-  <button onclick="exportExcel()">הורד קובץ Excel</button>
-
-  <h2>הרשימות שלך 🗒️</h2>
-  <div id="lists"></div>
-
-  <hr>
-  <div id="listManager" style="display:none;">
-    <h2 id="manageTitle"></h2>
-    <input id="newEn" placeholder="English">
-    <input id="newHe" placeholder="עברית">
-    <button onclick="addWord()">הוסף מילה</button>
-    <div id="wordsList"></div>
-    <button onclick="backToLists()">חזרה לרשימות</button>
+    <h3>📋 הרשימות שלך</h3>
+    <div id="lists"></div>
   </div>
-</div>
 
-<script>
-let data = {};
-let currentList = null;
-
-async function loadLists(){
-  const r = await fetch("/api/lists");
-  data = await r.json();
-  const div = document.getElementById("lists");
-  div.innerHTML = "";
-  for (const name in data){
-    const words = data[name];
-    const ok = words.reduce((a,w)=>a+(w.ok||0),0);
-    const bad = words.reduce((a,w)=>a+(w.bad||0),0);
-    const btns = `
-      <button onclick="openList('${name}')">נהל</button>
-      <button onclick="quiz('${name}','EN')">EN→HE תרגול</button>
-      <button onclick="quiz('${name}','HE')">HE→EN תרגול</button>
-    `;
-    div.innerHTML += `<div><b>${name}</b> | מילים:${words.length} | ✅${ok} ❌${bad}<br>${btns}</div><hr>`;
-  }
-}
-
-function createList(){
-  const name = document.getElementById("newListName").value.trim();
-  if(!name) return alert("נא להזין שם רשימה");
-  if(data[name]) return alert("הרשימה כבר קיימת");
-  data[name] = [];
-  saveLists();
-}
-
-function openList(name){
-  currentList = name;
-  document.getElementById("lists").style.display="none";
-  document.getElementById("listManager").style.display="block";
-  document.getElementById("manageTitle").innerText = `ניהול רשימה: ${name} (עד 15 מילים)`;
-  renderWords();
-}
-
-function backToLists(){
-  currentList=null;
-  document.getElementById("lists").style.display="block";
-  document.getElementById("listManager").style.display="none";
-  loadLists();
-}
-
-function renderWords(){
-  const div = document.getElementById("wordsList");
-  const words = data[currentList]||[];
-  div.innerHTML="";
-  words.forEach((w,i)=>{
-    const ratio = (w.ok+w.bad>0)?(w.bad/(w.ok+w.bad)).toFixed(2):"0.00";
-    div.innerHTML+=`
-      <div>
-        <button style="background:red" onclick="delWord(${i})">מחק</button>
-        <span>יחס🔥: ${ratio}</span>
-        ❌${w.bad} ✅${w.ok} — ${w.en} — ${w.he}
-      </div>`;
-  });
-}
-
-function addWord(){
-  const en=document.getElementById("newEn").value.trim();
-  const he=document.getElementById("newHe").value.trim();
-  if(!en||!he) return alert("נא להזין מילה באנגלית ובעברית");
-  const words=data[currentList];
-  if(words.length>=15) return alert("אי אפשר יותר מ-15 מילים ברשימה");
-  words.push({en,he,ok:0,bad:0});
-  document.getElementById("newEn").value="";
-  document.getElementById("newHe").value="";
-  saveLists();
-}
-
-function delWord(i){
-  data[currentList].splice(i,1);
-  saveLists();
-}
-
-async function saveLists(){
-  await fetch("/api/lists",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:currentList,words:data[currentList]})});
-  renderWords();
-  loadLists();
-}
-
-function quiz(name,dir){
-  const list=data[name];
-  if(!list||!list.length) return alert("אין מילים ברשימה");
-  // דירוג לפי יחס bad/ok
-  const sorted=[...list].sort((a,b)=>{
-    const ra=(a.ok+a.bad)>0?(a.bad/(a.ok+a.bad)):0;
-    const rb=(b.ok+b.bad)>0?(b.bad/(b.ok+b.bad)):0;
-    return rb-ra;
-  });
-  let i=0;
-  ask();
-
-  function ask(){
-    if(i>=sorted.length){saveLists();return alert("סיום תרגול ✅");}
-    const w=sorted[i];
-    const q=(dir==="EN")?w.en:w.he;
-    const ans=prompt(`(${i+1}/${sorted.length}) ${q}`);
-    if(ans===null)return;
-    const correct=(dir==="EN")?w.he:w.en;
-    if(ans.trim()===correct.trim()){
-      alert("נכון!");
-      w.ok=(w.ok||0)+1;
-    } else {
-      alert(`לא נכון ❌ התשובה: ${correct}`);
-      w.bad=(w.bad||0)+1;
-    }
-    i++;
-    saveLists();
-    ask();
-  }
-}
-
-async function importExcel(){
-  const fileInput=document.getElementById("excelFile");
-  if(!fileInput.files.length)return alert("נא לבחור קובץ Excel");
-  const formData=new FormData();
-  formData.append("file",fileInput.files[0]);
-  const r=await fetch("/api/import_excel",{method:"POST",body:formData});
-  const js=await r.json();
-  if(!js.ok)return alert(js.error||"שגיאה בייבוא");
-  alert(js.message||"ייבוא הסתיים בהצלחה!");
-  loadLists();
-}
-
-function exportExcel(){
-  window.location.href="/api/export_excel";
-}
-
-loadLists();
-</script>
+  <div id="manageArea" class="container" style="display:none"></div>
 </body>
 </html>
