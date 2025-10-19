@@ -1,10 +1,11 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 import json, os
 import pandas as pd
 
 app = Flask(__name__)
 DATA_FILE = "data.json"
 
+# === קריאה וכתיבה של הנתונים ===
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -15,14 +16,17 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# === דף הבית ===
 @app.route("/")
 def home():
     return render_template("index.html")
 
+# === שליפת כל הרשימות ===
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(load_data())
 
+# === שמירת רשימה ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     data = load_data()
@@ -32,7 +36,7 @@ def save_list():
     save_data(data)
     return jsonify({"ok": True})
 
-# --- ייבוא קובץ Excel ---
+# === ייבוא מקובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     if "file" not in request.files:
@@ -66,7 +70,7 @@ def import_excel():
         if name not in data:
             data[name] = []
 
-        # --- בדוק אם המילה כבר קיימת ---
+        # בדוק אם המילה כבר קיימת
         exists = any(w["en"] == en and w["he"] == he for w in data[name])
         if exists:
             skipped += 1
@@ -81,24 +85,28 @@ def import_excel():
         "ok": True
     })
 
-# --- ייצוא לקובץ Excel ---
-@app.route("/api/export_excel")
-def export_excel():
+# === הורדת כל הנתונים לקובץ Excel ===
+@app.route("/api/download_excel")
+def download_excel():
     data = load_data()
     rows = []
     for list_name, words in data.items():
         for w in words:
             rows.append({
-                "words in English": w["en"],
-                "תרגום בעברית": w["he"],
+                "words in English": w.get("en", ""),
+                "תרגום בעברית": w.get("he", ""),
                 "כמה פעמים ענית נכון": w.get("correct", 0),
                 "כמה פעמים ענית לא נכון": w.get("wrong", 0),
                 "שם הרשימה": list_name
             })
+
+    if not rows:
+        return jsonify({"message": "אין נתונים לייצוא", "ok": False})
+
     df = pd.DataFrame(rows)
-    path = "exported_words.xlsx"
-    df.to_excel(path, index=False)
-    return jsonify({"message": "📦 קובץ Excel נוצר בהצלחה בתיקייה!", "ok": True})
+    file_path = "all_words_export.xlsx"
+    df.to_excel(file_path, index=False)
+    return send_file(file_path, as_attachment=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
