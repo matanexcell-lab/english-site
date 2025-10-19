@@ -51,18 +51,15 @@
     .stat { margin: 0 4px; font-size: 14px; }
     .success { color: green; }
     .fail { color: red; }
-    .quiz-option {
-      display: block;
-      background: #e9f2ff;
-      padding: 10px;
-      margin: 6px auto;
-      border-radius: 8px;
-      max-width: 400px;
-      cursor: pointer;
-      font-size: 18px;
-    }
-    .quiz-option:hover { background: #cce4ff; }
     #quizArea { display: none; }
+    #answerInput {
+      padding: 10px;
+      font-size: 18px;
+      width: 70%;
+      border-radius: 5px;
+      border: 1px solid #999;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -95,7 +92,9 @@
     <div id="quizArea">
       <h3 id="quizTitle"></h3>
       <div id="quizQuestion"></div>
-      <div id="quizOptions"></div>
+      <input type="text" id="answerInput" placeholder="הקלד את התרגום..." onkeypress="if(event.key==='Enter') checkAnswer()" />
+      <div id="feedback"></div>
+      <button onclick="checkAnswer()">בדוק תשובה</button>
       <button onclick="endQuiz()">✖️ סיים חידון</button>
     </div>
   </div>
@@ -106,6 +105,7 @@
     let quizWords = [];
     let currentIndex = 0;
     let currentQuestion = null;
+    let showEnglish = true;
 
     async function loadLists() {
       const res = await fetch("/api/lists");
@@ -207,11 +207,11 @@
       }
     }
 
-    // ================= חידון =================
+    // =============== חידון בכתיבה חופשית ===============
     function startQuiz(listName) {
       currentList = listName;
       const words = [...allData[listName]];
-      if (words.length < 4) return alert("צריך לפחות 4 מילים לחידון");
+      if (words.length === 0) return alert("אין מילים בחידון הזה");
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
       document.getElementById("lists").style.display = "none";
@@ -221,43 +221,29 @@
 
     function showQuizQuestion() {
       if (currentIndex >= quizWords.length) return endQuiz();
-      const q = quizWords[currentIndex];
-      currentQuestion = q;
-      const showEnglish = Math.random() < 0.5;
+      currentQuestion = quizWords[currentIndex];
+      showEnglish = Math.random() < 0.5;
       document.getElementById("quizTitle").textContent = `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
-      document.getElementById("quizQuestion").textContent = showEnglish ? q.en : q.he;
-
-      const all = [...quizWords];
-      const correctAnswer = showEnglish ? q.he : q.en;
-      const options = [correctAnswer];
-      while (options.length < 4) {
-        const w = all[Math.floor(Math.random() * all.length)];
-        const opt = showEnglish ? w.he : w.en;
-        if (!options.includes(opt)) options.push(opt);
-      }
-      options.sort(() => Math.random() - 0.5);
-
-      const optDiv = document.getElementById("quizOptions");
-      optDiv.innerHTML = "";
-      for (const opt of options) {
-        const div = document.createElement("div");
-        div.className = "quiz-option";
-        div.textContent = opt;
-        div.onclick = () => checkAnswer(opt, correctAnswer);
-        optDiv.appendChild(div);
-      }
+      document.getElementById("quizQuestion").textContent = showEnglish ? currentQuestion.en : currentQuestion.he;
+      document.getElementById("answerInput").value = "";
+      document.getElementById("feedback").textContent = "";
+      document.getElementById("answerInput").focus();
     }
 
-    function checkAnswer(chosen, correct) {
-      if (chosen === correct) {
+    function checkAnswer() {
+      const userAnswer = document.getElementById("answerInput").value.trim();
+      if (!userAnswer) return;
+      const correctAnswer = showEnglish ? currentQuestion.he : currentQuestion.en;
+      if (userAnswer === correctAnswer) {
         currentQuestion.correct = (currentQuestion.correct || 0) + 1;
+        document.getElementById("feedback").innerHTML = "✅ תשובה נכונה!";
       } else {
         currentQuestion.wrong = (currentQuestion.wrong || 0) + 1;
-        alert("❌ התשובה הנכונה: " + correct);
+        document.getElementById("feedback").innerHTML = `❌ תשובה שגויה. הנכון הוא: ${correctAnswer}`;
       }
       saveLists();
       currentIndex++;
-      showQuizQuestion();
+      setTimeout(showQuizQuestion, 1000);
     }
 
     function endQuiz() {
