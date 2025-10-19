@@ -21,35 +21,49 @@
       border-radius: 10px;
       box-shadow: 0 0 5px #aaa;
     }
-    h1 { font-size: 28px; margin-bottom: 10px; }
+    h1 { font-size: 26px; margin-bottom: 10px; }
     button {
-      padding: 8px 12px;
-      margin: 5px;
+      padding: 6px 10px;
+      margin: 3px;
       background: #007bff;
       color: white;
       border: none;
       border-radius: 5px;
       cursor: pointer;
+      font-size: 14px;
     }
     input[type="text"], input[type="file"] {
       padding: 6px;
       margin: 5px;
       border-radius: 5px;
       border: 1px solid #ccc;
+      width: 45%;
     }
     ul { list-style-type: none; padding: 0; }
     li { margin: 6px 0; }
     .word-item {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 5px;
-      border-bottom: 1px solid #eee;
+      flex-direction: column;
+      background: #fafafa;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      box-shadow: 0 0 3px #ddd;
     }
-    .stat { margin: 0 4px; }
+    .word-text {
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+    .stat { margin: 0 4px; font-size: 14px; }
     .success { color: green; }
     .fail { color: red; }
-    .ratio { background: #f2f2f2; border-radius: 10px; padding: 2px 8px; font-size: 14px; }
+    .ratio { background: #eee; border-radius: 10px; padding: 2px 8px; font-size: 14px; }
+    .buttons-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
     .import-export {
       margin: 20px 0;
       border-top: 1px solid #ddd;
@@ -83,7 +97,7 @@
       <input type="text" id="newWordHE" placeholder="עברית" />
       <button onclick="addWord()">הוסף מילה</button>
       <ul id="wordsList"></ul>
-      <button onclick="backToLists()">חזרה לרשימות</button>
+      <button onclick="backToLists()">⬅️ חזרה לרשימות</button>
     </div>
   </div>
 
@@ -140,13 +154,18 @@
         const li = document.createElement("li");
         li.className = "word-item";
         li.innerHTML = `
-          <span>${w.en} — ${w.he}</span>
-          <span>
+          <div class="word-text">
+            <b>${w.en}</b> — ${w.he}
+          </div>
+          <div>
             🔥 יחס: ${ratio}
             <span class="stat success">✅ ${w.correct}</span>
             <span class="stat fail">❌ ${w.wrong}</span>
-            <button onclick="deleteWord('${w.en}')">מחק</button>
-          </span>`;
+          </div>
+          <div class="buttons-row">
+            <button onclick="editWord('${w.en}')">✏️ ערוך</button>
+            <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
+          </div>`;
         ul.appendChild(li);
       }
     }
@@ -164,6 +183,17 @@
 
     function deleteWord(en) {
       allData[currentList] = allData[currentList].filter(w => w.en !== en);
+      saveLists();
+      showWords();
+    }
+
+    function editWord(en) {
+      const word = allData[currentList].find(w => w.en === en);
+      if (!word) return;
+      const newEN = prompt("מילה באנגלית:", word.en) || word.en;
+      const newHE = prompt("תרגום בעברית:", word.he) || word.he;
+      word.en = newEN;
+      word.he = newHE;
       saveLists();
       showWords();
     }
