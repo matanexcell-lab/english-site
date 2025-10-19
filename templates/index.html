@@ -22,7 +22,7 @@
       box-shadow: 0 0 5px #aaa;
     }
     button {
-      padding: 6px 10px;
+      padding: 8px 14px;
       margin: 4px;
       background: #007bff;
       color: white;
@@ -58,6 +58,25 @@
       border-radius: 5px;
       border: 1px solid #999;
       margin-top: 10px;
+    }
+    /* חלון בחירת סוג חידון */
+    #directionPopup {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    #popupBox {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #333;
+      text-align: center;
+      width: 300px;
     }
   </style>
 </head>
@@ -98,13 +117,24 @@
     </div>
   </div>
 
+  <!-- חלון בחירת כיוון -->
+  <div id="directionPopup">
+    <div id="popupBox">
+      <h3>בחר סוג חידון:</h3>
+      <button onclick="setQuizDirection('EN_HE')">אנגלית → עברית</button>
+      <button onclick="setQuizDirection('HE_EN')">עברית → אנגלית</button>
+      <br><br>
+      <button style="background:#999" onclick="closePopup()">ביטול</button>
+    </div>
+  </div>
+
   <script>
     let allData = {};
     let currentList = null;
     let quizWords = [];
     let currentIndex = 0;
     let currentQuestion = null;
-    let quizDirection = "EN_HE"; // EN_HE או HE_EN
+    let quizDirection = "EN_HE";
 
     async function loadLists() {
       const res = await fetch("/api/lists");
@@ -126,7 +156,7 @@
           <h3>${name}</h3>
           <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
           <button onclick="manageList('${name}')">נהל</button>
-          <button onclick="chooseQuizDirection('${name}')">🎯 התחל חידון</button>
+          <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
         `;
         listsDiv.appendChild(div);
       }
@@ -206,11 +236,19 @@
       }
     }
 
-    // =================== חידון ===================
-    function chooseQuizDirection(listName) {
+    // === חידון ===
+    function openPopup(listName) {
       currentList = listName;
-      const choice = confirm("לחץ OK לחידון מאנגלית → עברית\nאו ביטול לחידון מעברית → אנגלית");
-      quizDirection = choice ? "EN_HE" : "HE_EN";
+      document.getElementById("directionPopup").style.display = "flex";
+    }
+
+    function closePopup() {
+      document.getElementById("directionPopup").style.display = "none";
+    }
+
+    function setQuizDirection(dir) {
+      quizDirection = dir;
+      closePopup();
       startQuiz();
     }
 
@@ -225,7 +263,7 @@
     }
 
     function normalize(str) {
-      return str.trim().toLowerCase().replace(/[\s\u0590-\u05FF]/g, s => s.trim());
+      return str.trim().toLowerCase();
     }
 
     function showQuizQuestion() {
