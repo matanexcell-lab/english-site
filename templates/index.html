@@ -31,6 +31,7 @@
       cursor: pointer;
       font-size: 14px;
     }
+    button:hover { background: #005dc1; }
     input[type="text"], input[type="file"] {
       padding: 6px;
       margin: 5px;
@@ -87,7 +88,6 @@
       <input type="text" id="newWordEN" placeholder="English" />
       <input type="text" id="newWordHE" placeholder="עברית" />
       <button onclick="addWord()">➕ הוסף מילה</button>
-      <button onclick="startQuiz()">🎯 התחל חידון</button>
       <ul id="wordsList"></ul>
       <button onclick="backToLists()">⬅️ חזרה לרשימות</button>
     </div>
@@ -114,9 +114,11 @@
     }
 
     function showLists() {
-      document.getElementById("lists").innerHTML = "";
+      const listsDiv = document.getElementById("lists");
+      listsDiv.innerHTML = "";
       document.getElementById("listView").style.display = "none";
       document.getElementById("quizArea").style.display = "none";
+
       for (const [name, words] of Object.entries(allData)) {
         const correct = words.reduce((a, w) => a + (w.correct || 0), 0);
         const wrong = words.reduce((a, w) => a + (w.wrong || 0), 0);
@@ -125,8 +127,9 @@
           <h3>${name}</h3>
           <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
           <button onclick="manageList('${name}')">נהל</button>
+          <button onclick="startQuiz('${name}')">🎯 התחל חידון</button>
         `;
-        document.getElementById("lists").appendChild(div);
+        listsDiv.appendChild(div);
       }
     }
 
@@ -205,12 +208,13 @@
     }
 
     // ================= חידון =================
-    function startQuiz() {
-      const words = [...allData[currentList]];
+    function startQuiz(listName) {
+      currentList = listName;
+      const words = [...allData[listName]];
       if (words.length < 4) return alert("צריך לפחות 4 מילים לחידון");
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
-      document.getElementById("listView").style.display = "none";
+      document.getElementById("lists").style.display = "none";
       document.getElementById("quizArea").style.display = "block";
       showQuizQuestion();
     }
@@ -246,11 +250,10 @@
 
     function checkAnswer(chosen, correct) {
       if (chosen === correct) {
-        alert("✅ תשובה נכונה!");
         currentQuestion.correct = (currentQuestion.correct || 0) + 1;
       } else {
-        alert("❌ תשובה שגויה! הנכון הוא: " + correct);
         currentQuestion.wrong = (currentQuestion.wrong || 0) + 1;
+        alert("❌ התשובה הנכונה: " + correct);
       }
       saveLists();
       currentIndex++;
@@ -260,7 +263,8 @@
     function endQuiz() {
       alert("החידון הסתיים ✅");
       document.getElementById("quizArea").style.display = "none";
-      manageList(currentList);
+      document.getElementById("lists").style.display = "block";
+      showLists();
     }
 
     async function importExcel() {
