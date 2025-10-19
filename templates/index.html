@@ -48,7 +48,6 @@
       margin-bottom: 6px;
       box-shadow: 0 0 3px #ddd;
     }
-    .stat { margin: 0 4px; font-size: 14px; }
     .success { color: green; }
     .fail { color: red; }
     #quizArea { display: none; }
@@ -105,7 +104,7 @@
     let quizWords = [];
     let currentIndex = 0;
     let currentQuestion = null;
-    let showEnglish = true;
+    let quizDirection = "EN_HE"; // EN_HE או HE_EN
 
     async function loadLists() {
       const res = await fetch("/api/lists");
@@ -127,7 +126,7 @@
           <h3>${name}</h3>
           <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
           <button onclick="manageList('${name}')">נהל</button>
-          <button onclick="startQuiz('${name}')">🎯 התחל חידון</button>
+          <button onclick="chooseQuizDirection('${name}')">🎯 התחל חידון</button>
         `;
         listsDiv.appendChild(div);
       }
@@ -207,10 +206,16 @@
       }
     }
 
-    // =============== חידון בכתיבה חופשית ===============
-    function startQuiz(listName) {
+    // =================== חידון ===================
+    function chooseQuizDirection(listName) {
       currentList = listName;
-      const words = [...allData[listName]];
+      const choice = confirm("לחץ OK לחידון מאנגלית → עברית\nאו ביטול לחידון מעברית → אנגלית");
+      quizDirection = choice ? "EN_HE" : "HE_EN";
+      startQuiz();
+    }
+
+    function startQuiz() {
+      const words = [...allData[currentList]];
       if (words.length === 0) return alert("אין מילים בחידון הזה");
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
@@ -219,12 +224,16 @@
       showQuizQuestion();
     }
 
+    function normalize(str) {
+      return str.trim().toLowerCase().replace(/[\s\u0590-\u05FF]/g, s => s.trim());
+    }
+
     function showQuizQuestion() {
       if (currentIndex >= quizWords.length) return endQuiz();
       currentQuestion = quizWords[currentIndex];
-      showEnglish = Math.random() < 0.5;
       document.getElementById("quizTitle").textContent = `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
-      document.getElementById("quizQuestion").textContent = showEnglish ? currentQuestion.en : currentQuestion.he;
+      document.getElementById("quizQuestion").textContent =
+        quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
       document.getElementById("answerInput").value = "";
       document.getElementById("feedback").textContent = "";
       document.getElementById("answerInput").focus();
@@ -233,8 +242,8 @@
     function checkAnswer() {
       const userAnswer = document.getElementById("answerInput").value.trim();
       if (!userAnswer) return;
-      const correctAnswer = showEnglish ? currentQuestion.he : currentQuestion.en;
-      if (userAnswer === correctAnswer) {
+      const correctAnswer = quizDirection === "EN_HE" ? currentQuestion.he : currentQuestion.en;
+      if (normalize(userAnswer) === normalize(correctAnswer)) {
         currentQuestion.correct = (currentQuestion.correct || 0) + 1;
         document.getElementById("feedback").innerHTML = "✅ תשובה נכונה!";
       } else {
