@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, render_template
 from flask_cors import CORS
 import pandas as pd
 import os
@@ -21,10 +21,12 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(lists, f, ensure_ascii=False, indent=2)
 
+# === שליפת כל הרשימות ===
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(lists)
 
+# === שמירת רשימה אחת ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     data = request.get_json()
@@ -34,6 +36,7 @@ def save_list():
     save_data()
     return jsonify({"ok": True})
 
+# === ייבוא מקובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     file = request.files["file"]
@@ -56,7 +59,7 @@ def import_excel():
         wrong = int(row["כמה פעמים ענית לא נכון"]) if not pd.isna(row["כמה פעמים ענית לא נכון"]) else 0
 
         # בדיקה אם המילה כבר קיימת
-        exists = any(w["en"] == en for w in lists[list_name])
+        exists = any(w["en"].lower() == en.lower() for w in lists[list_name])
         if not exists:
             lists[list_name].append({
                 "en": en,
@@ -69,6 +72,7 @@ def import_excel():
     save_data()
     return jsonify({"message": f"ייבוא הושלם ({added_count} מילים נוספו).", "ok": True})
 
+# === ייצוא כל הנתונים לקובץ Excel ===
 @app.route("/api/download_excel", methods=["GET"])
 def download_excel():
     rows = []
@@ -89,5 +93,11 @@ def download_excel():
     df.to_excel(file_path, index=False)
     return send_file(file_path, as_attachment=True)
 
+# === דף הבית ===
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+# === הפעלת השרת ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
