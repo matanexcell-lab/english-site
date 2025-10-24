@@ -9,19 +9,12 @@ CORS(app)
 
 DATA_FILE = "data.json"
 
-# ---------- עזרה: קריאה/כתיבה ל־JSON ----------
+# ---------- קריאה וכתיבה לקובץ ----------
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # נוודא שמבנה הנתונים הוא { list_name: [ {en, he, correct, wrong}, ... ], ... }
-                # ושדה מטה לא יפריע בחישובים
-                for name, words in list(data.items()):
-                    if isinstance(words, dict):
-                        # אם בטעות נשמר כ־dict, נהפוך לרשימה ריקה
-                        data[name] = words.get("words", [])
-                return data
+                return json.load(f)
         except Exception:
             return {}
     return {}
@@ -37,29 +30,22 @@ lists = load_data()
 def home():
     return render_template("index.html")
 
-# ---------- API: קריאה/שמירה של רשימות ----------
+# ---------- קבלת כל הרשימות ----------
 @app.route("/api/lists", methods=["GET"])
 def api_get_lists():
-    return jsonify(lists)
+    # נחזיר רק רשימות (לא מטה)
+    return jsonify({k: v for k, v in lists.items() if not k.startswith("_")})
 
+# ---------- שמירת רשימה ----------
 @app.route("/api/lists", methods=["POST"])
 def api_save_list():
-    """
-    מצפה ל־JSON: { "name": "<list name>", "words": [ {en, he, correct, wrong}, ... ] }
-    שומר את הרשימה ומעדכן את הקובץ.
-    """
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("name") or "").strip()
     words = data.get("words") or []
-
     if not name:
         return jsonify({"ok": False, "message": "שם רשימה חסר"}), 400
 
-    # מניעת יותר מ־15 מילים
-    if len(words) > 15:
-        words = words[:15]
-
-    # איחוד כפילויות לפי en (רישיות לא חשובה)
+    # מניעת כפילויות + ניקוי
     unique = {}
     for w in words:
         en = (w.get("en") or "").strip()
@@ -71,53 +57,52 @@ def api_save_list():
             unique[key] = {
                 "en": en,
                 "he": he,
-                "correct": int(w.get("correct", 0) or 0),
-                "wrong": int(w.get("wrong", 0) or 0),
+                "correct": int(w.get("correct", 0)),
+                "wrong": int(w.get("wrong", 0))
             }
     lists[name] = list(unique.values())
     save_data(lists)
     return jsonify({"ok": True})
 
-# ---------- API: עדכון תאריך חידון ----------
+# ---------- עדכון תאריך חידון ----------
 @app.route("/api/update_quiz_date", methods=["POST"])
 def api_update_quiz_date():
     data = request.get_json(force=True, silent=True) or {}
     list_name = (data.get("list_name") or "").strip()
     if not list_name or list_name not in lists:
         return jsonify({"ok": False, "message": "רשימה לא נמצאה"}), 404
-    # נשמור בתור "שדה מטה" מחוץ לרשימת המילים
-    # נשתמש במבנה מיוחד: רשימת מילים + מפתח מיוחד במפה צדדית
-    # כדי לשמור על תאימות נשמור ליד הרשימה קובץ צל:
-    meta_key = f"__meta__{list_name}"
-    lists_meta = load_data().get(meta_key)
-    # נקבע עכשיו
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    # נעדכן "שדה מטה" בכללי — פשוט נשמור ב־lists כ־"שדה" של הרשימה
-    # כדי לא לשבור את ה־index, נוסיף "תאריך" כמסד נתונים נפרד:
-    # טריק: נשים תאריך כאיבר ראשון מסוג dict עם דגל מיוחד, אך עדיף לשמור בקובץ נפרד — נעשה פשוט:
-    # נפשט: נוסיף שדה מיוחד ב־lists בתור מפתח עם underline:
-    # כדי לא לפגוע בלוגיקה, נשמור "תאריכים" במילון נפרד בתוך הקובץ:
-    dates = load_data().get("_last_quiz_dates", {})
-    dates[list_name] = now
 
-    # נמזג הכל לקובץ כדי לא לאבד רשימות שהיו בזיכרון
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+
     data_all = load_data()
-    data_all.update(lists)
+    dates = data_all.get("_last_quiz_dates")
+    if not isinstance(dates, dict):  # ← זה התיקון לשגיאה שלך
+        dates = {}
+
+    dates[list_name] = now
     data_all["_last_quiz_dates"] = dates
+
+    # עדכון רשימות
+    data_all.update(lists)
     save_data(data_all)
+
     return jsonify({"ok": True, "last_quiz": now})
 
 @app.route("/api/last_quiz_dates", methods=["GET"])
 def api_last_quiz_dates():
-    return jsonify(load_data().get("_last_quiz_dates", {}))
+    data = load_data()
+    dates = data.get("_last_quiz_dates", {})
+    if not isinstance(dates, dict):
+        dates = {}
+    return jsonify(dates)
 
-# ---------- API: ייבוא/ייצוא אקסל ----------
+# ---------- ייבוא / ייצוא אקסל ----------
 REQUIRED_COLS = [
     "words in English",
     "תרגום בעברית",
     "כמה פעמים ענית נכון",
     "כמה פעמים ענית לא נכון",
-    "שם הרשימה",
+    "שם הרשימה"
 ]
 
 @app.route("/api/import_excel", methods=["POST"])
@@ -134,7 +119,6 @@ def api_import_excel():
     except Exception as e:
         return jsonify({"ok": False, "message": f"שגיאה בקריאת הקובץ: {e}"}), 400
 
-    # בדיקת כותרות
     for col in REQUIRED_COLS:
         if col not in df.columns:
             return jsonify({"ok": False, "message": f"חסרה עמודה בשם {col}"}), 400
@@ -156,12 +140,11 @@ def api_import_excel():
         if list_name not in lists:
             lists[list_name] = []
 
-        # מניעת כפילויות (רישיות לא חשובה)
+        # מניעת כפילויות
         if any(w["en"].lower() == en.lower() for w in lists[list_name]):
             continue
 
         if len(lists[list_name]) >= 15:
-            # לא נוסיף מעבר ל־15
             continue
 
         lists[list_name].append({"en": en, "he": he, "correct": correct, "wrong": wrong})
@@ -174,15 +157,16 @@ def api_import_excel():
 @app.route("/api/download_excel", methods=["GET"])
 def api_download_excel():
     rows = []
-    # נטען גם תאריכים (לא נכנסים לאקסל, אבל נשמרים בקובץ)
     dates = load_data().get("_last_quiz_dates", {})
     for list_name, words in lists.items():
+        if list_name.startswith("_"):  # דלג על מטה
+            continue
         for w in words:
             rows.append({
                 "words in English": w["en"],
                 "תרגום בעברית": w["he"],
-                "כמה פעמים ענית נכון": int(w.get("correct", 0) or 0),
-                "כמה פעמים ענית לא נכון": int(w.get("wrong", 0) or 0),
+                "כמה פעמים ענית נכון": int(w.get("correct", 0)),
+                "כמה פעמים ענית לא נכון": int(w.get("wrong", 0)),
                 "שם הרשימה": list_name
             })
     if not rows:
@@ -195,5 +179,4 @@ def api_download_excel():
 
 # ---------- הרצה מקומית ----------
 if __name__ == "__main__":
-    # ב־Render ירוץ דרך gunicorn (ראה Procfile)
     app.run(host="0.0.0.0", port=10000)
