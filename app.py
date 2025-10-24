@@ -1,9 +1,13 @@
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import pandas as pd
-import os, json, base64, requests, atexit
+import os
+import json
+import requests
+import base64
+import atexit
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
 DATA_FILE = "data.json"
@@ -20,19 +24,14 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(lists, f, ensure_ascii=False, indent=2)
 
-# === עמוד הבית (index.html) ===
 @app.route("/")
 def home():
-    return send_from_directory(".", "index.html")
+    return send_file("templates/index.html")
 
-
-# === קבלת כל הרשימות ===
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(lists)
 
-
-# === שמירת רשימה ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     data = request.get_json()
@@ -42,8 +41,6 @@ def save_list():
     save_data()
     return jsonify({"ok": True})
 
-
-# === ייבוא קובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     file = request.files["file"]
@@ -79,14 +76,10 @@ def import_excel():
     save_data()
     return jsonify({"message": f"ייבוא הושלם ({added_count} מילים נוספו).", "ok": True})
 
-
-# === הורדת כל הנתונים לקובץ Excel ===
 @app.route("/api/download_excel", methods=["GET"])
 def download_excel():
     rows = []
     for list_name, words in lists.items():
-        if not isinstance(words, list):
-            continue
         for w in words:
             rows.append({
                 "words in English": w["en"],
@@ -103,46 +96,43 @@ def download_excel():
     df.to_excel(file_path, index=False)
     return send_file(file_path, as_attachment=True)
 
-
-# === עדכון תאריך אחרון של חידון ===
 @app.route("/api/update_quiz_date", methods=["POST"])
 def update_quiz_date():
     data = request.get_json()
-    name = data.get("list_name")
-    if name in lists:
-        lists[name + "_last_quiz"] = pd.Timestamp.now().isoformat()
+    list_name = data.get("list_name")
+    if list_name in lists:
+        if not isinstance(lists[list_name], list):
+            lists[list_name] = []
+        lists[list_name].append({"_last_quiz": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")})
         save_data()
-        return jsonify({"ok": True})
-    return jsonify({"ok": False})
+    return jsonify({"ok": True})
 
+# --- גיבוי ל-GitHub ---
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_REPO = os.environ.get("GITHUB_REPO")
 
-# === גיבוי ל-GitHub בזמן כיבוי ===
 def backup_to_github():
-    token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPO")
-    if not token or not repo:
-        print("⚠️ אין פרטי גישה לגיבוי GitHub — מדלג.")
+    if not GITHUB_TOKEN or not GITHUB_REPO:
         return
-
-    print("📤 מבצע גיבוי ל-GitHub...")
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             content = f.read()
-        encoded = base64.b64encode(content.encode()).decode()
-
-        url = f"https://api.github.com/repos/{repo}/contents/data.json"
-        headers = {"Authorization": f"token {token}"}
-        payload = {
-            "message": "Auto backup from Render",
-            "content": encoded
+        b64 = base64.b64encode(content.encode()).decode()
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DATA_FILE}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        res = requests.get(url, headers=headers)
+        sha = res.json().get("sha", "")
+        data = {
+            "message": "Auto backup",
+            "content": b64,
+            "sha": sha
         }
-        res = requests.put(url, headers=headers, json=payload)
-        print(f"✅ גיבוי ל-GitHub הושלם: {res.status_code}")
+        requests.put(url, headers=headers, json=data)
+        print("✅ גיבוי נשמר ב-GitHub בהצלחה")
     except Exception as e:
-        print(f"❌ שגיאה בגיבוי: {e}")
+        print("⚠️ שגיאת גיבוי ל-GitHub:", e)
 
 atexit.register(backup_to_github)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
