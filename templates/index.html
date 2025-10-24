@@ -1,182 +1,344 @@
-from flask import Flask, request, jsonify, send_file, render_template
-from flask_cors import CORS
-import pandas as pd
-import json, os
-from datetime import datetime
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>📘 אתר לימוד מילים באנגלית</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 20px;
+      direction: rtl;
+      text-align: center;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px #aaa;
+    }
+    button {
+      padding: 8px 14px;
+      margin: 4px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #005dc1; }
+    input[type="text"], input[type="file"] {
+      padding: 6px;
+      margin: 5px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      width: 45%;
+    }
+    ul { list-style-type: none; padding: 0; }
+    li { margin: 6px 0; }
+    .word-item {
+      background: #fafafa;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      box-shadow: 0 0 3px #ddd;
+    }
+    .success { color: green; }
+    .fail { color: red; }
+    #quizArea { display: none; }
+    #answerInput {
+      padding: 10px;
+      font-size: 18px;
+      width: 70%;
+      border-radius: 5px;
+      border: 1px solid #999;
+      margin-top: 10px;
+    }
+    #directionPopup {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    #popupBox {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #333;
+      text-align: center;
+      width: 300px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📘 אתר לימוד מילים באנגלית</h1>
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
+    <h3>➕ יצירת רשימה חדשה</h3>
+    <input type="text" id="newListName" placeholder="שם הרשימה" />
+    <button onclick="createList()">צור רשימה</button>
 
-DATA_FILE = "data.json"
+    <h3>📥 ייבוא מקובץ Excel</h3>
+    <input type="file" id="excelFile" accept=".xlsx" />
+    <button onclick="importExcel()">ייבא קובץ</button>
 
-# ---------- קריאה וכתיבה לקובץ ----------
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    <h3>📤 הורד את כל המילים לקובץ Excel</h3>
+    <button onclick="window.location.href='/api/download_excel'">הורד את כל הנתונים</button>
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    <h3>📋 הרשימות שלך (מסודרות לפי תאריך חידון)</h3>
+    <div id="lists"></div>
 
-lists = load_data()
+    <div id="listView" style="display:none;">
+      <h3 id="listTitle"></h3>
+      <input type="text" id="newWordEN" placeholder="English" />
+      <input type="text" id="newWordHE" placeholder="עברית" />
+      <button onclick="addWord()">➕ הוסף מילה</button>
+      <ul id="wordsList"></ul>
+      <button onclick="backToLists()">⬅️ חזרה לרשימות</button>
+    </div>
 
-# ---------- דף הבית ----------
-@app.route("/")
-def home():
-    return render_template("index.html")
+    <div id="quizArea">
+      <h3 id="quizTitle"></h3>
+      <div id="quizQuestion"></div>
+      <input type="text" id="answerInput" placeholder="הקלד את התרגום..." onkeypress="if(event.key==='Enter') checkAnswer()" />
+      <div id="feedback"></div>
+      <button onclick="checkAnswer()">בדוק תשובה</button>
+      <button onclick="endQuiz()">✖️ סיים חידון</button>
+    </div>
+  </div>
 
-# ---------- קבלת כל הרשימות ----------
-@app.route("/api/lists", methods=["GET"])
-def api_get_lists():
-    # נחזיר רק רשימות (לא מטה)
-    return jsonify({k: v for k, v in lists.items() if not k.startswith("_")})
+  <!-- חלון בחירת כיוון -->
+  <div id="directionPopup">
+    <div id="popupBox">
+      <h3>בחר סוג חידון:</h3>
+      <button onclick="setQuizDirection('EN_HE')">אנגלית → עברית</button>
+      <button onclick="setQuizDirection('HE_EN')">עברית → אנגלית</button>
+      <br><br>
+      <button style="background:#999" onclick="closePopup()">ביטול</button>
+    </div>
+  </div>
 
-# ---------- שמירת רשימה ----------
-@app.route("/api/lists", methods=["POST"])
-def api_save_list():
-    data = request.get_json(force=True, silent=True) or {}
-    name = (data.get("name") or "").strip()
-    words = data.get("words") or []
-    if not name:
-        return jsonify({"ok": False, "message": "שם רשימה חסר"}), 400
+  <script>
+    let allData = {};
+    let lastQuizDates = {};
+    let currentList = null;
+    let quizWords = [];
+    let currentIndex = 0;
+    let currentQuestion = null;
+    let quizDirection = "EN_HE";
 
-    # מניעת כפילויות + ניקוי
-    unique = {}
-    for w in words:
-        en = (w.get("en") or "").strip()
-        he = (w.get("he") or "").strip()
-        if not en or not he:
-            continue
-        key = en.lower()
-        if key not in unique:
-            unique[key] = {
-                "en": en,
-                "he": he,
-                "correct": int(w.get("correct", 0)),
-                "wrong": int(w.get("wrong", 0))
-            }
-    lists[name] = list(unique.values())
-    save_data(lists)
-    return jsonify({"ok": True})
+    async function loadLists() {
+      const res = await fetch("/api/lists");
+      allData = await res.json();
+      const res2 = await fetch("/api/last_quiz_dates");
+      lastQuizDates = await res2.json();
+      showLists();
+    }
 
-# ---------- עדכון תאריך חידון ----------
-@app.route("/api/update_quiz_date", methods=["POST"])
-def api_update_quiz_date():
-    data = request.get_json(force=True, silent=True) or {}
-    list_name = (data.get("list_name") or "").strip()
-    if not list_name or list_name not in lists:
-        return jsonify({"ok": False, "message": "רשימה לא נמצאה"}), 404
+    function showLists() {
+      const listsDiv = document.getElementById("lists");
+      listsDiv.innerHTML = "";
+      document.getElementById("listView").style.display = "none";
+      document.getElementById("quizArea").style.display = "none";
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+      const sorted = Object.entries(allData).sort((a, b) => {
+        const da = new Date(lastQuizDates[a[0]] || 0);
+        const db = new Date(lastQuizDates[b[0]] || 0);
+        return db - da;
+      });
 
-    data_all = load_data()
-    dates = data_all.get("_last_quiz_dates")
-    if not isinstance(dates, dict):  # ← זה התיקון לשגיאה שלך
-        dates = {}
+      for (const [name, words] of sorted) {
+        const correct = words.reduce((a, w) => a + (w.correct || 0), 0);
+        const wrong = words.reduce((a, w) => a + (w.wrong || 0), 0);
+        const lastQuiz = lastQuizDates[name] || "—";
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <h3>${name}</h3>
+          <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
+          <p>📅 נבחנת לאחרונה: ${lastQuiz}</p>
+          <button onclick="manageList('${name}')">נהל</button>
+          <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
+        `;
+        listsDiv.appendChild(div);
+      }
+    }
 
-    dates[list_name] = now
-    data_all["_last_quiz_dates"] = dates
+    function createList() {
+      const name = document.getElementById("newListName").value.trim();
+      if (!name) return alert("❗ הזן שם רשימה");
+      if (allData[name]) return alert("❗ רשימה בשם זה כבר קיימת");
+      allData[name] = [];
+      saveLists();
+      showLists();
+      document.getElementById("newListName").value = "";
+    }
 
-    # עדכון רשימות
-    data_all.update(lists)
-    save_data(data_all)
+    function manageList(name) {
+      currentList = name;
+      document.getElementById("listTitle").textContent = "ניהול רשימה: " + name;
+      document.getElementById("lists").innerHTML = "";
+      document.getElementById("listView").style.display = "block";
+      showWords();
+    }
 
-    return jsonify({"ok": True, "last_quiz": now})
+    function showWords() {
+      const ul = document.getElementById("wordsList");
+      ul.innerHTML = "";
+      const words = allData[currentList];
+      for (const w of words) {
+        const ratio = w.wrong + w.correct > 0 ? (w.wrong / (w.correct + 1)).toFixed(2) : "0.00";
+        const li = document.createElement("li");
+        li.className = "word-item";
+        li.innerHTML = `
+          <div><b>${w.en}</b> — ${w.he}</div>
+          <div>🔥 יחס: ${ratio} <span class="success">✅ ${w.correct}</span><span class="fail">❌ ${w.wrong}</span></div>
+          <button onclick="editWord('${w.en}')">✏️ ערוך</button>
+          <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
+        `;
+        ul.appendChild(li);
+      }
+    }
 
-@app.route("/api/last_quiz_dates", methods=["GET"])
-def api_last_quiz_dates():
-    data = load_data()
-    dates = data.get("_last_quiz_dates", {})
-    if not isinstance(dates, dict):
-        dates = {}
-    return jsonify(dates)
+    function addWord() {
+      const en = document.getElementById("newWordEN").value.trim();
+      const he = document.getElementById("newWordHE").value.trim();
+      if (!en || !he) return alert("❗ מלא את שני השדות");
+      const exists = allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase());
+      if (exists) return alert("מילה זו כבר קיימת ברשימה");
+      allData[currentList].push({ en, he, correct: 0, wrong: 0 });
+      saveLists();
+      showWords();
+      document.getElementById("newWordEN").value = "";
+      document.getElementById("newWordHE").value = "";
+    }
 
-# ---------- ייבוא / ייצוא אקסל ----------
-REQUIRED_COLS = [
-    "words in English",
-    "תרגום בעברית",
-    "כמה פעמים ענית נכון",
-    "כמה פעמים ענית לא נכון",
-    "שם הרשימה"
-]
+    function deleteWord(en) {
+      allData[currentList] = allData[currentList].filter(w => w.en !== en);
+      saveLists();
+      showWords();
+    }
 
-@app.route("/api/import_excel", methods=["POST"])
-def api_import_excel():
-    if "file" not in request.files:
-        return jsonify({"ok": False, "message": "לא נשלח קובץ"}), 400
+    function editWord(en) {
+      const word = allData[currentList].find(w => w.en === en);
+      if (!word) return;
+      const newEN = prompt("מילה באנגלית:", word.en) || word.en;
+      const newHE = prompt("תרגום בעברית:", word.he) || word.he;
+      word.en = newEN;
+      word.he = newHE;
+      saveLists();
+      showWords();
+    }
 
-    file = request.files["file"]
-    if not file.filename:
-        return jsonify({"ok": False, "message": "שם הקובץ ריק"}), 400
+    async function saveLists() {
+      for (const [name, words] of Object.entries(allData)) {
+        await fetch("/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, words })
+        });
+      }
+    }
 
-    try:
-        df = pd.read_excel(file)
-    except Exception as e:
-        return jsonify({"ok": False, "message": f"שגיאה בקריאת הקובץ: {e}"}), 400
+    // === חידון ===
+    function openPopup(listName) {
+      currentList = listName;
+      document.getElementById("directionPopup").style.display = "flex";
+    }
 
-    for col in REQUIRED_COLS:
-        if col not in df.columns:
-            return jsonify({"ok": False, "message": f"חסרה עמודה בשם {col}"}), 400
+    function closePopup() {
+      document.getElementById("directionPopup").style.display = "none";
+    }
 
-    added = 0
-    for _, row in df.iterrows():
-        list_name = str(row["שם הרשימה"]).strip()
-        if not list_name:
-            continue
+    function setQuizDirection(dir) {
+      quizDirection = dir;
+      closePopup();
+      startQuiz();
+    }
 
-        en = str(row["words in English"]).strip()
-        he = str(row["תרגום בעברית"]).strip()
-        if not en or not he:
-            continue
+    async function startQuiz() {
+      const words = [...allData[currentList]];
+      if (words.length === 0) return alert("אין מילים בחידון הזה");
+      quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
+      currentIndex = 0;
 
-        correct = int(row["כמה פעמים ענית נכון"]) if pd.notna(row["כמה פעמים ענית נכון"]) else 0
-        wrong = int(row["כמה פעמים ענית לא נכון"]) if pd.notna(row["כמה פעמים ענית לא נכון"]) else 0
+      const now = new Date().toLocaleString("he-IL");
+      await fetch("/api/update_quiz_date", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ list_name: currentList })
+      });
 
-        if list_name not in lists:
-            lists[list_name] = []
+      saveLists();
+      document.getElementById("lists").style.display = "none";
+      document.getElementById("quizArea").style.display = "block";
+      showQuizQuestion();
+    }
 
-        # מניעת כפילויות
-        if any(w["en"].lower() == en.lower() for w in lists[list_name]):
-            continue
+    function normalize(str) {
+      return str.trim().toLowerCase();
+    }
 
-        if len(lists[list_name]) >= 15:
-            continue
+    function showQuizQuestion() {
+      if (currentIndex >= quizWords.length) return endQuiz();
+      currentQuestion = quizWords[currentIndex];
+      document.getElementById("quizTitle").textContent = `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
+      document.getElementById("quizQuestion").textContent =
+        quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
+      document.getElementById("answerInput").value = "";
+      document.getElementById("feedback").textContent = "";
+      document.getElementById("answerInput").focus();
+    }
 
-        lists[list_name].append({"en": en, "he": he, "correct": correct, "wrong": wrong})
-        added += 1
+    function checkAnswer() {
+      const userAnswer = document.getElementById("answerInput").value.trim();
+      if (!userAnswer) return;
+      const correctAnswer = quizDirection === "EN_HE" ? currentQuestion.he : currentQuestion.en;
+      if (normalize(userAnswer) === normalize(correctAnswer)) {
+        currentQuestion.correct = (currentQuestion.correct || 0) + 1;
+        document.getElementById("feedback").innerHTML = "✅ תשובה נכונה!";
+      } else {
+        currentQuestion.wrong = (currentQuestion.wrong || 0) + 1;
+        document.getElementById("feedback").innerHTML = `❌ תשובה שגויה. הנכון הוא: ${correctAnswer}`;
+      }
+      saveLists();
+      currentIndex++;
+      setTimeout(showQuizQuestion, 800);
+    }
 
-    save_data(lists)
-    return jsonify({"ok": True, "message": f"ייבוא הושלם ({added} מילים נוספו)."})
+    function endQuiz() {
+      alert("החידון הסתיים ✅");
+      document.getElementById("quizArea").style.display = "none";
+      document.getElementById("lists").style.display = "block";
+      loadLists();
+    }
 
+    async function importExcel() {
+      const fileInput = document.getElementById("excelFile");
+      if (!fileInput.files.length) return alert("בחר קובץ Excel");
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      const res = await fetch("/api/import_excel", { method: "POST", body: formData });
+      const data = await res.json();
+      alert(data.message);
+      loadLists();
+    }
 
-@app.route("/api/download_excel", methods=["GET"])
-def api_download_excel():
-    rows = []
-    dates = load_data().get("_last_quiz_dates", {})
-    for list_name, words in lists.items():
-        if list_name.startswith("_"):  # דלג על מטה
-            continue
-        for w in words:
-            rows.append({
-                "words in English": w["en"],
-                "תרגום בעברית": w["he"],
-                "כמה פעמים ענית נכון": int(w.get("correct", 0)),
-                "כמה פעמים ענית לא נכון": int(w.get("wrong", 0)),
-                "שם הרשימה": list_name
-            })
-    if not rows:
-        return jsonify({"ok": False, "message": "אין נתונים לייצוא."}), 200
+    function backToLists() {
+      document.getElementById("listView").style.display = "none";
+      document.getElementById("lists").style.display = "block";
+      showLists();
+    }
 
-    df = pd.DataFrame(rows)
-    path = "all_words_export.xlsx"
-    df.to_excel(path, index=False)
-    return send_file(path, as_attachment=True)
-
-# ---------- הרצה מקומית ----------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    loadLists();
+  </script>
+</body>
+</html>
