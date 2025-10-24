@@ -59,7 +59,6 @@
       border: 1px solid #999;
       margin-top: 10px;
     }
-    /* חלון בחירת סוג חידון */
     #directionPopup {
       display: none;
       position: fixed;
@@ -95,7 +94,7 @@
     <h3>📤 הורד את כל המילים לקובץ Excel</h3>
     <button onclick="window.location.href='/api/download_excel'">הורד את כל הנתונים</button>
 
-    <h3>📋 הרשימות שלך</h3>
+    <h3>📋 הרשימות שלך (מסודרות לפי תאריך חידון)</h3>
     <div id="lists"></div>
 
     <div id="listView" style="display:none;">
@@ -148,13 +147,21 @@
       document.getElementById("listView").style.display = "none";
       document.getElementById("quizArea").style.display = "none";
 
-      for (const [name, words] of Object.entries(allData)) {
+      const sortedLists = Object.entries(allData).sort((a,b)=>{
+        const da = a[1]._last_quiz ? new Date(a[1]._last_quiz) : 0;
+        const db = b[1]._last_quiz ? new Date(b[1]._last_quiz) : 0;
+        return da - db; // ישנות קודם
+      });
+
+      for (const [name, words] of sortedLists) {
         const correct = words.reduce((a, w) => a + (w.correct || 0), 0);
         const wrong = words.reduce((a, w) => a + (w.wrong || 0), 0);
+        const lastQuiz = words._last_quiz || "—";
         const div = document.createElement("div");
         div.innerHTML = `
           <h3>${name}</h3>
           <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
+          <p>📅 נבחנת לאחרונה: ${lastQuiz}</p>
           <button onclick="manageList('${name}')">נהל</button>
           <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
         `;
@@ -202,6 +209,8 @@
       const en = document.getElementById("newWordEN").value.trim();
       const he = document.getElementById("newWordHE").value.trim();
       if (!en || !he) return alert("❗ מלא את שני השדות");
+      const exists = allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase());
+      if (exists) return alert("מילה זו כבר קיימת ברשימה");
       allData[currentList].push({ en, he, correct: 0, wrong: 0 });
       saveLists();
       showWords();
@@ -252,11 +261,22 @@
       startQuiz();
     }
 
-    function startQuiz() {
+    async function startQuiz() {
       const words = [...allData[currentList]];
       if (words.length === 0) return alert("אין מילים בחידון הזה");
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
+
+      // שמירה על תאריך אחרון
+      const now = new Date().toLocaleString("he-IL");
+      allData[currentList]._last_quiz = now;
+      await fetch("/api/update_quiz_date", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ list_name: currentList })
+      });
+
+      saveLists();
       document.getElementById("lists").style.display = "none";
       document.getElementById("quizArea").style.display = "block";
       showQuizQuestion();
@@ -290,28 +310,3 @@
       }
       saveLists();
       currentIndex++;
-      setTimeout(showQuizQuestion, 1000);
-    }
-
-    function endQuiz() {
-      alert("החידון הסתיים ✅");
-      document.getElementById("quizArea").style.display = "none";
-      document.getElementById("lists").style.display = "block";
-      showLists();
-    }
-
-    async function importExcel() {
-      const fileInput = document.getElementById("excelFile");
-      if (!fileInput.files.length) return alert("בחר קובץ Excel");
-      const formData = new FormData();
-      formData.append("file", fileInput.files[0]);
-      const res = await fetch("/api/import_excel", { method: "POST", body: formData });
-      const data = await res.json();
-      alert(data.message);
-      loadLists();
-    }
-
-    loadLists();
-  </script>
-</body>
-</html>
