@@ -1,14 +1,16 @@
-from flask import Flask, jsonify, request, send_file, render_template
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import pandas as pd
-import os
-import json
-from datetime import datetime
+import os, json, base64, requests, atexit
 
 app = Flask(__name__)
 CORS(app)
 
 DATA_FILE = "data.json"
+REPO = "matanmoalem/english-site"  # שנה לשם המאגר שלך
+FILE_PATH_IN_REPO = "data.json"
+GITHUB_API = "https://api.github.com/repos"
+TOKEN = os.environ.get("GITHUB_TOKEN")
 
 # --- טעינת נתונים קיימים ---
 if os.path.exists(DATA_FILE):
@@ -17,27 +19,55 @@ if os.path.exists(DATA_FILE):
 else:
     lists = {}
 
-def save_data():
-    """שומר את הנתונים לקובץ JSON"""
+def save_local():
+    """שומר רק מקומית"""
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(lists, f, ensure_ascii=False, indent=2)
 
-# === שליפת כל הרשימות ===
+def backup_to_github():
+    """גיבוי ל-GitHub (מופעל רק עם סגירת השרת)"""
+    if not TOKEN:
+        print("⚠️ GITHUB_TOKEN not set — skipping sync")
+        return
+    try:
+        print("📤 מבצע גיבוי ל-GitHub...")
+        # השגת SHA נוכחי (אם יש)
+        r = requests.get(f"{GITHUB_API}/{REPO}/contents/{FILE_PATH_IN_REPO}",
+                         headers={"Authorization": f"token {TOKEN}"})
+        sha = r.json().get("sha", None)
+
+        data = {
+            "message": "Backup data.json before server sleep",
+            "content": base64.b64encode(
+                json.dumps(lists, ensure_ascii=False, indent=2).encode("utf-8")
+            ).decode("utf-8"),
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
+
+        res = requests.put(f"{GITHUB_API}/{REPO}/contents/{FILE_PATH_IN_REPO}",
+                           headers={"Authorization": f"token {TOKEN}"}, json=data)
+        print("✅ גיבוי ל-GitHub הושלם:", res.status_code)
+    except Exception as e:
+        print("❌ שגיאת גיבוי ל-GitHub:", e)
+
+# רושם את פעולת הגיבוי שתקרה כששרת Render נכבה
+atexit.register(backup_to_github)
+
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(lists)
 
-# === שמירת רשימה אחת ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     data = request.get_json()
     name = data["name"]
     words = data["words"]
     lists[name] = words
-    save_data()
+    save_local()
     return jsonify({"ok": True})
 
-# === ייבוא מקובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     file = request.files["file"]
@@ -59,7 +89,7 @@ def import_excel():
         correct = int(row["כמה פעמים ענית נכון"]) if not pd.isna(row["כמה פעמים ענית נכון"]) else 0
         wrong = int(row["כמה פעמים ענית לא נכון"]) if not pd.isna(row["כמה פעמים ענית לא נכון"]) else 0
 
-        # בדיקה אם המילה כבר קיימת
+        # בדיקה שאין כפל מילים
         exists = any(w["en"].lower() == en.lower() for w in lists[list_name])
         if not exists:
             lists[list_name].append({
@@ -70,49 +100,38 @@ def import_excel():
             })
             added_count += 1
 
-    save_data()
+    save_local()
     return jsonify({"message": f"ייבוא הושלם ({added_count} מילים נוספו).", "ok": True})
 
-# === ייצוא כל הנתונים לקובץ Excel ===
 @app.route("/api/download_excel", methods=["GET"])
 def download_excel():
     rows = []
     for list_name, words in lists.items():
-        last_quiz = words._last_quiz if isinstance(words, dict) and "_last_quiz" in words else "-"
         for w in words:
             rows.append({
                 "words in English": w["en"],
                 "תרגום בעברית": w["he"],
                 "כמה פעמים ענית נכון": w.get("correct", 0),
                 "כמה פעמים ענית לא נכון": w.get("wrong", 0),
-                "שם הרשימה": list_name,
-                "תאריך חידון אחרון": last_quiz
+                "שם הרשימה": list_name
             })
     if not rows:
         return jsonify({"message": "אין נתונים לייצוא.", "ok": False})
-    
+
     df = pd.DataFrame(rows)
     file_path = "all_words.xlsx"
     df.to_excel(file_path, index=False)
     return send_file(file_path, as_attachment=True)
 
-# === עדכון תאריך חידון אחרון ===
 @app.route("/api/update_quiz_date", methods=["POST"])
 def update_quiz_date():
     data = request.get_json()
-    list_name = data.get("list_name")
-    if list_name and list_name in lists:
-        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-        lists[list_name]._last_quiz = now_str
-        save_data()
-        return jsonify({"ok": True, "date": now_str})
-    return jsonify({"ok": False, "error": "רשימה לא נמצאה"})
+    list_name = data["list_name"]
+    from datetime import datetime
+    if list_name in lists:
+        lists[list_name].append({"_last_quiz": datetime.now().isoformat()})
+        save_local()
+    return jsonify({"ok": True})
 
-# === דף הבית ===
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-# === הפעלת השרת ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
