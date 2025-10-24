@@ -1,16 +1,12 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 import pandas as pd
 import os, json, base64, requests, atexit
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=".", static_url_path="")
 CORS(app)
 
 DATA_FILE = "data.json"
-REPO = "matanmoalem/english-site"  # שנה לשם המאגר שלך
-FILE_PATH_IN_REPO = "data.json"
-GITHUB_API = "https://api.github.com/repos"
-TOKEN = os.environ.get("GITHUB_TOKEN")
 
 # --- טעינת נתונים קיימים ---
 if os.path.exists(DATA_FILE):
@@ -19,55 +15,35 @@ if os.path.exists(DATA_FILE):
 else:
     lists = {}
 
-def save_local():
-    """שומר רק מקומית"""
+def save_data():
+    """שומר את הנתונים לקובץ JSON"""
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(lists, f, ensure_ascii=False, indent=2)
 
-def backup_to_github():
-    """גיבוי ל-GitHub (מופעל רק עם סגירת השרת)"""
-    if not TOKEN:
-        print("⚠️ GITHUB_TOKEN not set — skipping sync")
-        return
-    try:
-        print("📤 מבצע גיבוי ל-GitHub...")
-        # השגת SHA נוכחי (אם יש)
-        r = requests.get(f"{GITHUB_API}/{REPO}/contents/{FILE_PATH_IN_REPO}",
-                         headers={"Authorization": f"token {TOKEN}"})
-        sha = r.json().get("sha", None)
+# === עמוד הבית (index.html) ===
+@app.route("/")
+def home():
+    return send_from_directory(".", "index.html")
 
-        data = {
-            "message": "Backup data.json before server sleep",
-            "content": base64.b64encode(
-                json.dumps(lists, ensure_ascii=False, indent=2).encode("utf-8")
-            ).decode("utf-8"),
-            "branch": "main"
-        }
-        if sha:
-            data["sha"] = sha
 
-        res = requests.put(f"{GITHUB_API}/{REPO}/contents/{FILE_PATH_IN_REPO}",
-                           headers={"Authorization": f"token {TOKEN}"}, json=data)
-        print("✅ גיבוי ל-GitHub הושלם:", res.status_code)
-    except Exception as e:
-        print("❌ שגיאת גיבוי ל-GitHub:", e)
-
-# רושם את פעולת הגיבוי שתקרה כששרת Render נכבה
-atexit.register(backup_to_github)
-
+# === קבלת כל הרשימות ===
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(lists)
 
+
+# === שמירת רשימה ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     data = request.get_json()
     name = data["name"]
     words = data["words"]
     lists[name] = words
-    save_local()
+    save_data()
     return jsonify({"ok": True})
 
+
+# === ייבוא קובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     file = request.files["file"]
@@ -89,7 +65,7 @@ def import_excel():
         correct = int(row["כמה פעמים ענית נכון"]) if not pd.isna(row["כמה פעמים ענית נכון"]) else 0
         wrong = int(row["כמה פעמים ענית לא נכון"]) if not pd.isna(row["כמה פעמים ענית לא נכון"]) else 0
 
-        # בדיקה שאין כפל מילים
+        # בדיקה אם המילה כבר קיימת
         exists = any(w["en"].lower() == en.lower() for w in lists[list_name])
         if not exists:
             lists[list_name].append({
@@ -100,13 +76,17 @@ def import_excel():
             })
             added_count += 1
 
-    save_local()
+    save_data()
     return jsonify({"message": f"ייבוא הושלם ({added_count} מילים נוספו).", "ok": True})
 
+
+# === הורדת כל הנתונים לקובץ Excel ===
 @app.route("/api/download_excel", methods=["GET"])
 def download_excel():
     rows = []
     for list_name, words in lists.items():
+        if not isinstance(words, list):
+            continue
         for w in words:
             rows.append({
                 "words in English": w["en"],
@@ -117,21 +97,52 @@ def download_excel():
             })
     if not rows:
         return jsonify({"message": "אין נתונים לייצוא.", "ok": False})
-
+    
     df = pd.DataFrame(rows)
     file_path = "all_words.xlsx"
     df.to_excel(file_path, index=False)
     return send_file(file_path, as_attachment=True)
 
+
+# === עדכון תאריך אחרון של חידון ===
 @app.route("/api/update_quiz_date", methods=["POST"])
 def update_quiz_date():
     data = request.get_json()
-    list_name = data["list_name"]
-    from datetime import datetime
-    if list_name in lists:
-        lists[list_name].append({"_last_quiz": datetime.now().isoformat()})
-        save_local()
-    return jsonify({"ok": True})
+    name = data.get("list_name")
+    if name in lists:
+        lists[name + "_last_quiz"] = pd.Timestamp.now().isoformat()
+        save_data()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False})
+
+
+# === גיבוי ל-GitHub בזמן כיבוי ===
+def backup_to_github():
+    token = os.environ.get("GITHUB_TOKEN")
+    repo = os.environ.get("GITHUB_REPO")
+    if not token or not repo:
+        print("⚠️ אין פרטי גישה לגיבוי GitHub — מדלג.")
+        return
+
+    print("📤 מבצע גיבוי ל-GitHub...")
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+        encoded = base64.b64encode(content.encode()).decode()
+
+        url = f"https://api.github.com/repos/{repo}/contents/data.json"
+        headers = {"Authorization": f"token {token}"}
+        payload = {
+            "message": "Auto backup from Render",
+            "content": encoded
+        }
+        res = requests.put(url, headers=headers, json=payload)
+        print(f"✅ גיבוי ל-GitHub הושלם: {res.status_code}")
+    except Exception as e:
+        print(f"❌ שגיאה בגיבוי: {e}")
+
+atexit.register(backup_to_github)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
