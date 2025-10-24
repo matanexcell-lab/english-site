@@ -77,13 +77,18 @@ def import_excel():
 def download_excel():
     rows = []
     for list_name, words in lists.items():
+        last_quiz = words[0].get("_last_quiz") if isinstance(words, list) and words and "_last_quiz" in words[0] else None
+        # שומר גם את התאריך אם שמור ברמת הרשימה
+        last_quiz = words._last_quiz if isinstance(words, dict) and "_last_quiz" in words else None
+
         for w in words:
             rows.append({
                 "words in English": w["en"],
                 "תרגום בעברית": w["he"],
                 "כמה פעמים ענית נכון": w.get("correct", 0),
                 "כמה פעמים ענית לא נכון": w.get("wrong", 0),
-                "שם הרשימה": list_name
+                "שם הרשימה": list_name,
+                "תאריך חידון אחרון": last_quiz or "-"
             })
     if not rows:
         return jsonify({"message": "אין נתונים לייצוא.", "ok": False})
