@@ -7,7 +7,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 DATA_FILE = "words_data.json"
 DATE_FILE = "quiz_dates.json"
 
-# === פונקציות עזר ===
+# ---------- קריאה וכתיבה של הנתונים ----------
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
@@ -28,87 +28,61 @@ def save_dates(data):
     with open(DATE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
-# === דף הבית ===
+# ---------- ראוטים ----------
 @app.route("/")
 def home():
     return send_file("templates/index.html")
 
-
-# === קבלת רשימות ===
 @app.route("/api/lists", methods=["GET"])
 def get_lists():
     return jsonify(load_data())
 
-
-# === שמירת רשימה ===
 @app.route("/api/lists", methods=["POST"])
 def save_list():
     body = request.json
     if not body or "name" not in body:
         return jsonify({"error": "missing name"}), 400
-
     data = load_data()
     data[body["name"]] = body.get("words", [])
     save_data(data)
     return jsonify({"ok": True})
 
-
-# === עדכון תאריך חידון ===
 @app.route("/api/update_quiz_date", methods=["POST"])
 def update_quiz_date():
-    try:
-        data = request.get_json()
-        list_name = data.get("list_name")
-        date = data.get("date") or datetime.datetime.now().isoformat()
-        dates = load_dates()
-        dates[list_name] = date
-        save_dates(dates)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    data = request.get_json()
+    list_name = data.get("list_name")
+    date = data.get("date") or datetime.datetime.now().isoformat()
+    dates = load_dates()
+    dates[list_name] = date
+    save_dates(dates)
+    return jsonify({"ok": True})
 
-
-# === קבלת תאריכי חידון ===
 @app.route("/api/last_quiz_dates", methods=["GET"])
 def last_quiz_dates():
     return jsonify(load_dates())
 
-
-# === העברת מילה בין רשימות ===
+# ---------- העברת מילה מרשימה לרשימה ----------
 @app.route("/api/move_word", methods=["POST"])
 def move_word():
-    try:
-        data = request.json
-        from_list = data.get("from_list")
-        to_list = data.get("to_list")
-        word = data.get("word")
+    data = request.json
+    from_list = data.get("from_list")
+    to_list = data.get("to_list")
+    word = data.get("word")
 
-        all_data = load_data()
-        if from_list not in all_data or to_list not in all_data:
-            return jsonify({"ok": False, "message": "רשימה לא קיימת"})
+    all_data = load_data()
+    if from_list not in all_data or to_list not in all_data:
+        return jsonify({"ok": False, "message": "רשימה לא קיימת"})
 
-        word_obj = next((w for w in all_data[from_list] if w["en"] == word), None)
-        if not word_obj:
-            return jsonify({"ok": False, "message": "המילה לא נמצאה"})
+    word_obj = next((w for w in all_data[from_list] if w["en"] == word), None)
+    if not word_obj:
+        return jsonify({"ok": False, "message": "המילה לא נמצאה"})
 
-        # הסרה מהרשימה המקורית
-        all_data[from_list] = [w for w in all_data[from_list] if w["en"] != word]
+    all_data[from_list] = [w for w in all_data[from_list] if w["en"] != word]
+    all_data[to_list].append(word_obj)
+    save_data(all_data)
+    return jsonify({"ok": True, "message": f"המילה '{word}' הועברה מ'{from_list}' אל '{to_list}' בהצלחה ✅"})
 
-        # הוספה לרשימה החדשה
-        exists = any(w["en"].lower() == word.lower() for w in all_data[to_list])
-        if not exists:
-            all_data[to_list].append(word_obj)
-        else:
-            return jsonify({"ok": False, "message": "המילה כבר קיימת ברשימה היעד"})
-
-        save_data(all_data)
-        return jsonify({"ok": True, "message": f"המילה '{word}' הועברה מ'{from_list}' אל '{to_list}' בהצלחה ✅"})
-    except Exception as e:
-        return jsonify({"ok": False, "message": str(e)})
-
-
-# === ייבוא אקסל ===
+# ---------- ייבוא מאקסל (כולל תאריך אחרון חידון) ----------
 @app.route("/api/import_excel", methods=["POST"])
 def import_excel():
     if "file" not in request.files:
@@ -123,6 +97,8 @@ def import_excel():
                 return jsonify({"ok": False, "message": f"עמודה חסרה: {col}"})
 
         data = load_data()
+        dates = load_dates()
+
         for _, row in df.iterrows():
             list_name = str(row["שם הרשימה"]).strip()
             if not list_name:
@@ -144,25 +120,35 @@ def import_excel():
                     "wrong": wrong
                 })
 
+            # אם קיימת עמודת תאריך — נעדכן את רשימת התאריכים
+            if "תאריך אחרון חידון" in df.columns:
+                last_date = str(row["תאריך אחרון חידון"]).strip()
+                if last_date and last_date.lower() != "nan":
+                    dates[list_name] = last_date
+
         save_data(data)
+        save_dates(dates)
         return jsonify({"ok": True, "message": f"הקובץ נטען בהצלחה ({len(df)} שורות)"})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)})
 
-
-# === הורדת כל הנתונים כקובץ אקסל ===
+# ---------- ייצוא לאקסל (כולל תאריך אחרון חידון) ----------
 @app.route("/api/download_excel")
 def download_excel():
     data = load_data()
+    dates = load_dates()
     rows = []
+
     for list_name, words in data.items():
+        last_quiz = dates.get(list_name, "")
         for w in words:
             rows.append({
                 "words in English": w.get("en", ""),
                 "תרגום בעברית": w.get("he", ""),
                 "כמה פעמים ענית נכון": w.get("correct", 0),
                 "כמה פעמים ענית לא נכון": w.get("wrong", 0),
-                "שם הרשימה": list_name
+                "שם הרשימה": list_name,
+                "תאריך אחרון חידון": last_quiz
             })
 
     df = pd.DataFrame(rows)
@@ -171,6 +157,6 @@ def download_excel():
     output.seek(0)
     return send_file(output, as_attachment=True, download_name="all_words_export.xlsx")
 
-
+# ---------- הרצה ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
