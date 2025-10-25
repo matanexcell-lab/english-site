@@ -116,7 +116,6 @@
     </div>
   </div>
 
-  <!-- חלון בחירת כיוון -->
   <div id="directionPopup">
     <div id="popupBox">
       <h3>בחר סוג חידון:</h3>
@@ -248,7 +247,6 @@
       }
     }
 
-    // === חידון ===
     function openPopup(listName) {
       currentList = listName;
       document.getElementById("directionPopup").style.display = "flex";
@@ -270,6 +268,7 @@
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
 
+      // ✅ השורה החשובה ששומרת את תאריך החידון
       const now = new Date().toLocaleString("he-IL");
       await fetch("/api/update_quiz_date", {
         method: "POST",
