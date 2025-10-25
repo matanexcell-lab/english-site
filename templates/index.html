@@ -200,14 +200,40 @@
         const ratio = w.wrong + w.correct > 0 ? (w.wrong / (w.correct + 1)).toFixed(2) : "0.00";
         const li = document.createElement("li");
         li.className = "word-item";
+
+        const options = Object.keys(allData)
+          .filter(name => name !== currentList)
+          .map(name => `<option value="${name}">${name}</option>`)
+          .join("");
+
         li.innerHTML = `
           <div><b>${w.en}</b> — ${w.he}</div>
           <div>🔥 יחס: ${ratio} <span class="success">✅ ${w.correct}</span><span class="fail">❌ ${w.wrong}</span></div>
           <button onclick="editWord('${w.en}')">✏️ ערוך</button>
           <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
+          <select id="move-${w.en.replace(/\s/g,'_')}">
+            <option value="">בחר רשימה להעברה</option>
+            ${options}
+          </select>
+          <button onclick="moveWord('${w.en}')">➡️ העבר</button>
         `;
         ul.appendChild(li);
       }
+    }
+
+    async function moveWord(en) {
+      const select = document.getElementById(`move-${en.replace(/\s/g,'_')}`);
+      const toList = select.value;
+      if (!toList) return alert("בחר רשימה להעברה");
+
+      const res = await fetch("/api/move_word", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from_list: currentList, to_list: toList, word: en })
+      });
+      const data = await res.json();
+      alert(data.message);
+      loadLists();
     }
 
     function addWord() {
@@ -250,6 +276,7 @@
       }
     }
 
+    // ===== חידון =====
     function openPopup(listName) {
       currentList = listName;
       document.getElementById("directionPopup").style.display = "flex";
@@ -271,7 +298,6 @@
       quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
       currentIndex = 0;
 
-      // ✅ שמירת תאריך חידון בשרת
       const now = new Date().toISOString();
       await fetch("/api/update_quiz_date", {
         method: "POST",
