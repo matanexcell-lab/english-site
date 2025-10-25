@@ -283,9 +283,7 @@
       showQuizQuestion();
     }
 
-    function normalize(str) {
-      return str.trim().toLowerCase();
-    }
+    function normalize(str) { return str.trim().toLowerCase(); }
 
     function showQuizQuestion() {
       if (currentIndex >= quizWords.length) return endQuiz();
