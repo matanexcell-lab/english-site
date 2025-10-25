@@ -1,182 +1,154 @@
-from flask import Flask, request, jsonify, send_file, render_template
-from flask_cors import CORS
+from flask import Flask, request, jsonify, send_file
 import pandas as pd
-import json, os
-from datetime import datetime
+import json, os, datetime, io
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
 
-DATA_FILE = "data.json"
+DATA_FILE = "words_data.json"
+DATE_FILE = "quiz_dates.json"
 
-# ---------- קריאה וכתיבה לקובץ ----------
+# === עוזרים לשמירה וטעינה של נתונים ===
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    if not os.path.exists(DATA_FILE):
+        return {}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-lists = load_data()
+def load_dates():
+    if not os.path.exists(DATE_FILE):
+        return {}
+    with open(DATE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-# ---------- דף הבית ----------
+def save_dates(data):
+    with open(DATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return send_file("templates/index.html")
 
-# ---------- קבלת כל הרשימות ----------
+
+# === קבלת רשימות ===
 @app.route("/api/lists", methods=["GET"])
-def api_get_lists():
-    # נחזיר רק רשימות (לא מטה)
-    return jsonify({k: v for k, v in lists.items() if not k.startswith("_")})
+def get_lists():
+    data = load_data()
+    return jsonify(data)
 
-# ---------- שמירת רשימה ----------
+
+# === שמירת רשימה ===
 @app.route("/api/lists", methods=["POST"])
-def api_save_list():
-    data = request.get_json(force=True, silent=True) or {}
-    name = (data.get("name") or "").strip()
-    words = data.get("words") or []
-    if not name:
-        return jsonify({"ok": False, "message": "שם רשימה חסר"}), 400
+def save_list():
+    body = request.json
+    if not body or "name" not in body:
+        return jsonify({"error": "missing name"}), 400
 
-    # מניעת כפילויות + ניקוי
-    unique = {}
-    for w in words:
-        en = (w.get("en") or "").strip()
-        he = (w.get("he") or "").strip()
-        if not en or not he:
-            continue
-        key = en.lower()
-        if key not in unique:
-            unique[key] = {
-                "en": en,
-                "he": he,
-                "correct": int(w.get("correct", 0)),
-                "wrong": int(w.get("wrong", 0))
-            }
-    lists[name] = list(unique.values())
-    save_data(lists)
+    data = load_data()
+    data[body["name"]] = body.get("words", [])
+    save_data(data)
     return jsonify({"ok": True})
 
-# ---------- עדכון תאריך חידון ----------
+
+# === שמירת תאריך חידון ===
 @app.route("/api/update_quiz_date", methods=["POST"])
 def api_update_quiz_date():
-    data = request.get_json(force=True, silent=True) or {}
-    list_name = (data.get("list_name") or "").strip()
-    if not list_name or list_name not in lists:
-        return jsonify({"ok": False, "message": "רשימה לא נמצאה"}), 404
+    try:
+        data = request.get_json()
+        list_name = data.get("list_name")
+        date = data.get("date")
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+        if not list_name:
+            return jsonify({"ok": False, "error": "no list_name"}), 400
 
-    data_all = load_data()
-    dates = data_all.get("_last_quiz_dates")
-    if not isinstance(dates, dict):  # ← זה התיקון לשגיאה שלך
-        dates = {}
+        dates = load_dates()
+        # אם לא נשלח תאריך — נשתמש בזמן נוכחי
+        dates[list_name] = date or datetime.datetime.now().isoformat()
+        save_dates(dates)
 
-    dates[list_name] = now
-    data_all["_last_quiz_dates"] = dates
+        print(f"✅ עודכן תאריך חידון עבור: {list_name}")
+        return jsonify({"ok": True})
+    except Exception as e:
+        print("❌ שגיאה בעדכון תאריך:", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
 
-    # עדכון רשימות
-    data_all.update(lists)
-    save_data(data_all)
 
-    return jsonify({"ok": True, "last_quiz": now})
-
+# === קבלת תאריכי חידון ===
 @app.route("/api/last_quiz_dates", methods=["GET"])
 def api_last_quiz_dates():
-    data = load_data()
-    dates = data.get("_last_quiz_dates", {})
-    if not isinstance(dates, dict):
-        dates = {}
+    dates = load_dates()
     return jsonify(dates)
 
-# ---------- ייבוא / ייצוא אקסל ----------
-REQUIRED_COLS = [
-    "words in English",
-    "תרגום בעברית",
-    "כמה פעמים ענית נכון",
-    "כמה פעמים ענית לא נכון",
-    "שם הרשימה"
-]
 
+# === ייבוא קובץ Excel ===
 @app.route("/api/import_excel", methods=["POST"])
-def api_import_excel():
+def import_excel():
     if "file" not in request.files:
-        return jsonify({"ok": False, "message": "לא נשלח קובץ"}), 400
-
+        return jsonify({"ok": False, "message": "לא נבחר קובץ"})
     file = request.files["file"]
-    if not file.filename:
-        return jsonify({"ok": False, "message": "שם הקובץ ריק"}), 400
 
     try:
         df = pd.read_excel(file)
+        required_cols = ["words in English", "תרגום בעברית", "כמה פעמים ענית נכון", "כמה פעמים ענית לא נכון", "שם הרשימה"]
+        for col in required_cols:
+            if col not in df.columns:
+                return jsonify({"ok": False, "message": f"עמודה חסרה: {col}"})
+
+        data = load_data()
+        for _, row in df.iterrows():
+            list_name = str(row["שם הרשימה"]).strip()
+            if not list_name:
+                continue
+            if list_name not in data:
+                data[list_name] = []
+
+            en = str(row["words in English"]).strip()
+            he = str(row["תרגום בעברית"]).strip()
+            correct = int(row["כמה פעמים ענית נכון"])
+            wrong = int(row["כמה פעמים ענית לא נכון"])
+
+            # מניעת כפילות
+            exists = any(w["en"].lower() == en.lower() for w in data[list_name])
+            if not exists:
+                data[list_name].append({
+                    "en": en,
+                    "he": he,
+                    "correct": correct,
+                    "wrong": wrong
+                })
+
+        save_data(data)
+        return jsonify({"ok": True, "message": f"הקובץ נטען בהצלחה ({len(df)} שורות)"})
+
     except Exception as e:
-        return jsonify({"ok": False, "message": f"שגיאה בקריאת הקובץ: {e}"}), 400
-
-    for col in REQUIRED_COLS:
-        if col not in df.columns:
-            return jsonify({"ok": False, "message": f"חסרה עמודה בשם {col}"}), 400
-
-    added = 0
-    for _, row in df.iterrows():
-        list_name = str(row["שם הרשימה"]).strip()
-        if not list_name:
-            continue
-
-        en = str(row["words in English"]).strip()
-        he = str(row["תרגום בעברית"]).strip()
-        if not en or not he:
-            continue
-
-        correct = int(row["כמה פעמים ענית נכון"]) if pd.notna(row["כמה פעמים ענית נכון"]) else 0
-        wrong = int(row["כמה פעמים ענית לא נכון"]) if pd.notna(row["כמה פעמים ענית לא נכון"]) else 0
-
-        if list_name not in lists:
-            lists[list_name] = []
-
-        # מניעת כפילויות
-        if any(w["en"].lower() == en.lower() for w in lists[list_name]):
-            continue
-
-        if len(lists[list_name]) >= 15:
-            continue
-
-        lists[list_name].append({"en": en, "he": he, "correct": correct, "wrong": wrong})
-        added += 1
-
-    save_data(lists)
-    return jsonify({"ok": True, "message": f"ייבוא הושלם ({added} מילים נוספו)."})
+        return jsonify({"ok": False, "message": str(e)})
 
 
-@app.route("/api/download_excel", methods=["GET"])
-def api_download_excel():
+# === הורדת הנתונים כקובץ Excel ===
+@app.route("/api/download_excel")
+def download_excel():
+    data = load_data()
     rows = []
-    dates = load_data().get("_last_quiz_dates", {})
-    for list_name, words in lists.items():
-        if list_name.startswith("_"):  # דלג על מטה
-            continue
+    for list_name, words in data.items():
         for w in words:
             rows.append({
-                "words in English": w["en"],
-                "תרגום בעברית": w["he"],
-                "כמה פעמים ענית נכון": int(w.get("correct", 0)),
-                "כמה פעמים ענית לא נכון": int(w.get("wrong", 0)),
+                "words in English": w.get("en", ""),
+                "תרגום בעברית": w.get("he", ""),
+                "כמה פעמים ענית נכון": w.get("correct", 0),
+                "כמה פעמים ענית לא נכון": w.get("wrong", 0),
                 "שם הרשימה": list_name
             })
-    if not rows:
-        return jsonify({"ok": False, "message": "אין נתונים לייצוא."}), 200
 
     df = pd.DataFrame(rows)
-    path = "all_words_export.xlsx"
-    df.to_excel(path, index=False)
-    return send_file(path, as_attachment=True)
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name="all_words_export.xlsx")
 
-# ---------- הרצה מקומית ----------
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
