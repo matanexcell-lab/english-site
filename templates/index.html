@@ -1,547 +1,370 @@
 <!doctype html>
 <html lang="he" dir="rtl">
 <head>
-  <meta charset="utf-8"/>
-  <title>⏱️ טיימר משימות</title>
+  <meta charset="utf-8" />
+  <title>📘 אתר לימוד מילים באנגלית</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <style>
-    body { font-family: Arial, sans-serif; direction: rtl; background:#fafafa; margin:0; padding:0; }
-    h1 { text-align:center; margin-top:15px; }
-    table { width: 100%; border-collapse: collapse; margin-top:15px; background:white; }
-    th, td { border: 1px solid #bbb; padding: 6px; text-align: center; }
-    input[type="number"] { width: 64px; }
-    input[type="text"] { width: 180px; }
-
-    .muted { color: #777; font-size: 12px; }
-
-    .badge { display:inline-block; padding:2px 6px; border-radius:6px; font-size:12px; }
-    .running { background:#d9ffd9; }
-    .paused  { background:#fff0b3; }
-    .pending { background:#f2f2f2; }
-    .done    { background:#eee; color:#444; text-decoration:line-through; }
-
-    button { cursor:pointer; padding:4px 8px; }
-
-    .row-actions { display:flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-
-    .edit-grid, .extend-grid, .move-grid {
-      display:flex; gap:6px; align-items:center; justify-content:center; flex-wrap:wrap;
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 20px;
+      direction: rtl;
+      text-align: center;
     }
-
-    .toolbar { text-align:center; margin-bottom:10px }
-    .tools { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:10px }
-
-    .work-col { width: 42px; }
-
-    .sim-row { background:#f7f4ff; font-size:12px; color:#444; }
-    .sim-label { font-weight:bold; }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px #aaa;
+    }
+    button {
+      padding: 8px 14px;
+      margin: 4px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #005dc1; }
+    input[type="text"], input[type="file"] {
+      padding: 6px;
+      margin: 5px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      width: 45%;
+    }
+    ul { list-style-type: none; padding: 0; }
+    li { margin: 6px 0; }
+    .word-item {
+      background: #fafafa;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      box-shadow: 0 0 3px #ddd;
+    }
+    .success { color: green; }
+    .fail { color: red; }
+    #quizArea { display: none; }
+    #answerInput {
+      padding: 10px;
+      font-size: 18px;
+      width: 70%;
+      border-radius: 5px;
+      border: 1px solid #999;
+      margin-top: 10px;
+    }
+    #directionPopup {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    #popupBox {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #333;
+      text-align: center;
+      width: 300px;
+    }
   </style>
 </head>
-
 <body>
+  <div class="container">
+    <h1>📘 אתר לימוד מילים באנגלית</h1>
 
-<h1>⏱️ טיימר משימות</h1>
+    <h3>➕ יצירת רשימה חדשה</h3>
+    <input type="text" id="newListName" placeholder="שם הרשימה" />
+    <button onclick="createList()">צור רשימה</button>
 
-<div class="toolbar">
-  <div id="now" class="muted"></div>
-  <b>שעת סיום כוללת:</b> <span id="overallEnd">-</span><br>
-  <b>זמן עבודה כולל:</b> <span id="workTotal">00:00:00</span>
-</div>
+    <h3>📥 ייבוא מקובץ Excel</h3>
+    <input type="file" id="excelFile" accept=".xlsx" />
+    <button onclick="importExcel()">ייבא קובץ</button>
 
-<div class="tools">
+    <h3>📤 הורד את כל המילים לקובץ Excel</h3>
+    <button onclick="window.location.href='/api/download_excel'">הורד את כל הנתונים</button>
 
-  <!-- משימה חדשה -->
-  <span>
-    <input id="newName" type="text" placeholder="שם משימה">
-    <input id="newH" type="number" min="0" value="0"> שעות
-    <input id="newM" type="number" min="0" value="0"> דקות
-    <input id="newS" type="number" min="0" value="0"> שניות
+    <h3>📋 הרשימות שלך (מסודרות לפי תאריך חידון)</h3>
+    <div id="lists"></div>
 
-    <!-- ברירת מחדל: מקום ראשון -->
-    <input id="newPos" type="number" min="1" value="1" style="width:60px" title="מיקום משימה חדשה">
-    <button id="btnAdd">➕ הוסף</button>
-  </span>
+    <div id="listView" style="display:none;">
+      <h3 id="listTitle"></h3>
+      <input type="text" id="newWordEN" placeholder="English" />
+      <input type="text" id="newWordHE" placeholder="עברית" />
+      <button onclick="addWord()">➕ הוסף מילה</button>
+      <ul id="wordsList"></ul>
+      <button onclick="backToLists()">⬅️ חזרה לרשימות</button>
+    </div>
 
-  <!-- סימולציה -->
-  <span>
-    שעת התחלה לסימולציה:
-    <input id="simStartTime" type="time" value="08:00">
-    <button id="btnSimToggle">הצג סימולציה</button>
-  </span>
+    <div id="quizArea">
+      <h3 id="quizTitle"></h3>
+      <div id="quizQuestion"></div>
+      <input type="text" id="answerInput" placeholder="הקלד את התרגום..." onkeypress="if(event.key==='Enter') checkAnswer()" />
+      <div id="feedback"></div>
+      <button onclick="checkAnswer()">בדוק תשובה</button>
+      <button onclick="endQuiz()">✖️ סיים חידון</button>
+    </div>
+  </div>
 
-  <!-- כל Pending -->
-  <span>
-    <button id="btnAllPending">הפוך את כל המשימות ל-Pending</button>
-  </span>
+  <div id="directionPopup">
+    <div id="popupBox">
+      <h3>בחר סוג חידון:</h3>
+      <button onclick="setQuizDirection('EN_HE')">אנגלית → עברית</button>
+      <button onclick="setQuizDirection('HE_EN')">עברית → אנגלית</button>
+      <br><br>
+      <button style="background:#999" onclick="closePopup()">ביטול</button>
+    </div>
+  </div>
 
-  <!-- ייבוא / ייצוא -->
-  <span>
-    <button id="btnExport">📤 ייצא</button>
-    <label style="cursor:pointer">
-      📥 ייבא
-      <input id="fileImport" type="file" accept="application/json" style="display:none">
-    </label>
-  </span>
+  <script>
+    let allData = {};
+    let lastQuizDates = {};
+    let currentList = null;
+    let quizWords = [];
+    let currentIndex = 0;
+    let currentQuestion = null;
+    let quizDirection = "EN_HE";
 
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th>פעולות</th>
-      <th>העברה</th>
-      <th>הארכה</th>
-      <th>עריכה</th>
-      <th>סטטוס</th>
-      <th>שעת סיום</th>
-      <th>שעת התחלה</th>
-      <th>נותר</th>
-      <th>שם</th>
-      <th>עבודה</th>
-      <th>#</th>
-    </tr>
-  </thead>
-
-  <tbody id="tbody"></tbody>
-
-</table>
-
-<!-- חלק 2 מגיע כאן -->
-<script>
-// ===== עזר מהיר =====
-const $ = s => document.querySelector(s);
-
-let tasks = [];
-let syncing = false;
-let busy = false;          // כשיש פעולה (מחיקה / התחלה וכו') – לא נסנכרן במקביל
-let lastServerSync = 0;
-let frozenLayout = null;
-let showSimulation = false;   // ברירת מחדל: סימולציה מוסתרת
-
-// פורמט זמן לפי אזור זמן ישראל
-const tzFmt = new Intl.DateTimeFormat("he-IL", {
-  timeZone: "Asia/Jerusalem",
-  hour12: false,
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit"
-});
-
-// המרת שניות ל- HH:MM:SS
-function fmt(t) {
-  t = Math.max(0, parseInt(t) || 0);
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const s = t % 60;
-  return (
-    h.toString().padStart(2, "0") + ":" +
-    m.toString().padStart(2, "0") + ":" +
-    s.toString().padStart(2, "0")
-  );
-}
-
-// קלאס של תגית הסטטוס
-function badgeClass(st) {
-  if (st === "running") return "badge running";
-  if (st === "paused")  return "badge paused";
-  if (st === "pending") return "badge pending";
-  return "badge done";
-}
-
-// קריאה ל-API
-async function api(url, method="GET", body=null) {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : null
-    });
-    return await res.json();
-  } catch (e) {
-    console.error("API error", e);
-    return null;
-  }
-}
-
-// חישוב שעת סיום כוללת (לפי remaining)
-function computeOverallEndLocal() {
-  const nowMs = Date.now();
-  let total = 0;
-  for (const t of tasks) {
-    if (["running","paused","pending"].includes(t.status)) {
-      total += t.remaining;
+    async function loadLists() {
+      const res = await fetch("/api/lists");
+      allData = await res.json();
+      const res2 = await fetch("/api/last_quiz_dates");
+      lastQuizDates = await res2.json();
+      showLists();
     }
-  }
-  if (total === 0) return "-";
-  return tzFmt.format(new Date(nowMs + total * 1000));
-}
 
-// פריסת זמנים למשימות (לפי remaining, מי רצה וכו') – ל"תצוגת התחלה/סיום"
-function computeTimesOnce() {
-  const nowMs = Date.now();
-  const r = tasks.findIndex(t => t.status === "running");
-  let layout = [];
+    function showLists() {
+      const listsDiv = document.getElementById("lists");
+      listsDiv.innerHTML = "";
+      document.getElementById("listView").style.display = "none";
+      document.getElementById("quizArea").style.display = "none";
 
-  if (r === -1) {
-    // אין משימה רצה – הכול "טורי" מ-עכשיו
-    let base = nowMs;
-    for (const t of tasks) {
-      const dur = t.remaining * 1000;
-      layout.push({ id: t.id, start: base, end: base + dur });
-      base += dur;
-    }
-  } else {
-    // יש משימה רצה
-    const run = tasks[r];
-    const elapsed = Math.max(0, (run.duration || 0) - run.remaining);
-    const startRun = nowMs - elapsed * 1000;
-    const endRun   = startRun + (run.duration || 0) * 1000;
-
-    // כל מה שלפני המשימה הרצה
-    let end = startRun;
-    for (let i = r - 1; i >= 0; i--) {
-      const dur = tasks[i].remaining * 1000;
-      layout.unshift({
-        id: tasks[i].id,
-        start: end - dur,
-        end: end
+      const sorted = Object.entries(allData).sort((a, b) => {
+        const da = new Date(lastQuizDates[a[0]] || 0);
+        const db = new Date(lastQuizDates[b[0]] || 0);
+        return db - da;
       });
-      end -= dur;
+
+      for (const [name, words] of sorted) {
+        const correct = words.reduce((a, w) => a + (w.correct || 0), 0);
+        const wrong = words.reduce((a, w) => a + (w.wrong || 0), 0);
+        const lastQuiz = lastQuizDates[name]
+          ? new Date(lastQuizDates[name]).toLocaleDateString("he-IL")
+          : "—";
+
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <h3>${name}</h3>
+          <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
+          <p>📅 נבחנת לאחרונה: <b>${lastQuiz}</b></p>
+          <button onclick="manageList('${name}')">נהל</button>
+          <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
+        `;
+        listsDiv.appendChild(div);
+      }
     }
 
-    // המשימה הרצה
-    layout.push({
-      id: run.id,
-      start: startRun,
-      end: endRun
-    });
+    function createList() {
+      const name = document.getElementById("newListName").value.trim();
+      if (!name) return alert("❗ הזן שם רשימה");
+      if (allData[name]) return alert("❗ רשימה בשם זה כבר קיימת");
+      allData[name] = [];
+      saveLists();
+      showLists();
+      document.getElementById("newListName").value = "";
+    }
 
-    // כל מה שאחרי המשימה הרצה
-    let start = endRun;
-    for (let i = r + 1; i < tasks.length; i++) {
-      const dur = tasks[i].remaining * 1000;
-      layout.push({
-        id: tasks[i].id,
-        start,
-        end: start + dur
+    function manageList(name) {
+      currentList = name;
+      document.getElementById("listTitle").textContent = "ניהול רשימה: " + name;
+      document.getElementById("lists").innerHTML = "";
+      document.getElementById("listView").style.display = "block";
+      showWords();
+    }
+
+    function showWords() {
+      const ul = document.getElementById("wordsList");
+      ul.innerHTML = "";
+      const words = allData[currentList];
+      for (const w of words) {
+        const ratio = w.wrong + w.correct > 0 ? (w.wrong / (w.correct + 1)).toFixed(2) : "0.00";
+        const li = document.createElement("li");
+        li.className = "word-item";
+
+        const options = Object.keys(allData)
+          .filter(name => name !== currentList)
+          .map(name => `<option value="${name}">${name}</option>`)
+          .join("");
+
+        li.innerHTML = `
+          <div><b>${w.en}</b> — ${w.he}</div>
+          <div>🔥 יחס: ${ratio} <span class="success">✅ ${w.correct}</span><span class="fail">❌ ${w.wrong}</span></div>
+          <button onclick="editWord('${w.en}')">✏️ ערוך</button>
+          <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
+          <select id="move-${w.en.replace(/\s/g,'_')}">
+            <option value="">בחר רשימה להעברה</option>
+            ${options}
+          </select>
+          <button onclick="moveWord('${w.en}')">➡️ העבר</button>
+        `;
+        ul.appendChild(li);
+      }
+    }
+
+    async function moveWord(en) {
+      const select = document.getElementById(`move-${en.replace(/\s/g,'_')}`);
+      const toList = select.value;
+      if (!toList) return alert("בחר רשימה להעברה");
+
+      const res = await fetch("/api/move_word", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from_list: currentList, to_list: toList, word: en })
       });
-      start += dur;
-    }
-  }
-
-  frozenLayout = layout;
-}
-
-// פריסת סימולציה לפי שעה בשדה simStartTime
-function computeSimulationLayout() {
-  const timeStr = $("#simStartTime").value || "08:00";
-  const [hh, mm] = timeStr.split(":").map(x => parseInt(x) || 0);
-
-  const nowDate = new Date();
-  const simStart = new Date(
-    nowDate.getFullYear(),
-    nowDate.getMonth(),
-    nowDate.getDate(),
-    hh, mm, 0, 0
-  ).getTime();
-
-  let base = simStart;
-  return tasks.map(t => {
-    const dur = (t.duration || 0) * 1000;
-    const row = { id: t.id, start: base, end: base + dur };
-    base += dur;
-    return row;
-  });
-}
-
-// סנכרון מלא מהשרת
-async function syncState(force=false) {
-  const now = Date.now();
-  if (busy) return;           // כשיש פעולה – לא נסנכרן
-  if (syncing) return;
-  if (!force && now - lastServerSync < 2000) return;
-
-  syncing = true;
-  const data = await api("/state");
-  syncing = false;
-  lastServerSync = now;
-
-  if (!data || !data.ok) return;
-
-  tasks = data.tasks || [];
-  $("#workTotal").textContent = data.work_total_hhmmss || "00:00:00";
-  $("#now").textContent = data.now || "";
-  $("#overallEnd").textContent = computeOverallEndLocal();
-
-  if (!tasks.some(t => t.status === "running")) {
-    frozenLayout = null;
-  }
-
-  renderAll();
-}
-
-// רינדור כל הטבלה (tbody) – לפי המצב הנוכחי
-function renderAll() {
-  const tb = $("#tbody");
-  tb.innerHTML = "";
-
-  if (!frozenLayout) {
-    computeTimesOnce();
-  }
-
-  const simLayout = showSimulation ? computeSimulationLayout() : [];
-
-  tasks.forEach((t, index) => {
-    const layout = frozenLayout ? frozenLayout.find(x => x.id === t.id) : null;
-    const startStr = layout ? tzFmt.format(new Date(layout.start)) : "-";
-    const endStr   = layout ? tzFmt.format(new Date(layout.end))   : "-";
-    const canEdit  = (t.status !== "running");
-
-    // שורת סימולציה (אם מוצג)
-    if (showSimulation) {
-      const sim = simLayout.find(x => x.id === t.id);
-      const simTr = document.createElement("tr");
-      simTr.className = "sim-row";
-
-      const simStartStr = sim ? tzFmt.format(new Date(sim.start)) : "-";
-      const simEndStr   = sim ? tzFmt.format(new Date(sim.end))   : "-";
-
-      simTr.innerHTML = `
-        <td colspan="11">
-          <span class="sim-label">סימולציה</span> –
-          התחלה: <b>${simStartStr}</b>,
-          סיום: <b>${simEndStr}</b>
-        </td>
-      `;
-      tb.appendChild(simTr);
+      const data = await res.json();
+      alert(data.message);
+      loadLists();
     }
 
-    // שורת המשימה
-    const tr = document.createElement("tr");
-    tr.id = "row-" + t.id;
-    tr.className = t.status;
+    function addWord() {
+      const en = document.getElementById("newWordEN").value.trim();
+      const he = document.getElementById("newWordHE").value.trim();
+      if (!en || !he) return alert("❗ מלא את שני השדות");
+      const exists = allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase());
+      if (exists) return alert("מילה זו כבר קיימת ברשימה");
+      allData[currentList].push({ en, he, correct: 0, wrong: 0 });
+      saveLists();
+      showWords();
+      document.getElementById("newWordEN").value = "";
+      document.getElementById("newWordHE").value = "";
+    }
 
-    tr.innerHTML = `
-      <td class="row-actions">
-        <button onclick="rowAction('/start/${t.id}')">התחל</button>
-        <button onclick="rowAction('/pause/${t.id}')">השהה</button>
-        <button onclick="rowAction('/reset/${t.id}')">איפוס</button>
-        <button onclick="rowAction('/set_pending/${t.id}')">Pending</button>
-        <button onclick="rowAction('/skip/${t.id}')">דלג</button>
-        <button onclick="rowAction('/done/${t.id}')">Done</button>
-        <button onclick="rowAction('/delete/${t.id}')">מחק</button>
-      </td>
+    function deleteWord(en) {
+      allData[currentList] = allData[currentList].filter(w => w.en !== en);
+      saveLists();
+      showWords();
+    }
 
-      <td>
-        <div class="move-grid">
-          <input class="move-to" type="number" min="1" value="${index+1}">
-          <button onclick="moveTask(${t.id})">העבר</button>
-        </div>
-      </td>
+    function editWord(en) {
+      const word = allData[currentList].find(w => w.en === en);
+      if (!word) return;
+      const newEN = prompt("מילה באנגלית:", word.en) || word.en;
+      const newHE = prompt("תרגום בעברית:", word.he) || word.he;
+      word.en = newEN;
+      word.he = newHE;
+      saveLists();
+      showWords();
+    }
 
-      <td>
-        <div class="extend-grid">
-          <input class="ext-h" type="number" value="0">:
-          <input class="ext-m" type="number" value="0">:
-          <input class="ext-s" type="number" value="0">
-          <button onclick="extendTask(${t.id})">הארך</button>
-        </div>
-      </td>
+    async function saveLists() {
+      for (const [name, words] of Object.entries(allData)) {
+        await fetch("/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, words })
+        });
+      }
+    }
 
-      <td>
-        <div class="edit-grid">
-          <input class="edit-h" type="number" value="${Math.floor((t.duration||0)/3600)}" ${canEdit?"":"disabled"}>:
-          <input class="edit-m" type="number" value="${Math.floor(((t.duration||0)%3600)/60)}" ${canEdit?"":"disabled"}>:
-          <input class="edit-s" type="number" value="${(t.duration||0)%60}" ${canEdit?"":"disabled"}>
-          <button ${canEdit?"":"disabled"} onclick="updateTask(${t.id})">עדכן</button>
-        </div>
-      </td>
+    // ===== חידון =====
+    function openPopup(listName) {
+      currentList = listName;
+      document.getElementById("directionPopup").style.display = "flex";
+    }
 
-      <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
-      <td>${endStr}</td>
-      <td>${startStr}</td>
-      <td><span class="remain">${fmt(t.remaining)}</span></td>
-      <td><input class="edit-name" type="text" value="${t.name || ""}" ${canEdit?"":"disabled"}></td>
-      <td><input class="work-flag" type="checkbox" ${t.is_work ? "checked" : ""}></td>
-      <td>${index+1}</td>
-    `;
+    function closePopup() {
+      document.getElementById("directionPopup").style.display = "none";
+    }
 
-    // שינוי work-flag
-    tr.querySelector(".work-flag").onchange = async (e)=>{
-      busy = true;
-      await api(`/workflag/${t.id}`, "POST", { is_work: e.target.checked });
-      busy = false;
-      await syncState(true);
-    };
+    function setQuizDirection(dir) {
+      quizDirection = dir;
+      closePopup();
+      startQuiz();
+    }
 
-    // לשמור רפרנס ל-id בתוך tr
-    tr.dataset.id = t.id;
-    tb.appendChild(tr);
-  });
-}
+    async function startQuiz() {
+      const words = [...allData[currentList]];
+      if (words.length === 0) return alert("אין מילים בחידון הזה");
+      quizWords = words.sort((a, b) => ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1)));
+      currentIndex = 0;
 
-// פעולה כללית על שורה (start/pause/reset/delete וכו')
-async function rowAction(url) {
-  busy = true;
-  await api(url, "POST");
-  busy = false;
-  await syncState(true);
-}
+      const now = new Date().toISOString();
+      await fetch("/api/update_quiz_date", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ list_name: currentList, date: now })
+      });
 
-// עדכון משימה (שם + זמן)
-async function updateTask(id) {
-  const row = $("#row-" + id);
-  if (!row) return;
+      saveLists();
+      document.getElementById("lists").style.display = "none";
+      document.getElementById("quizArea").style.display = "block";
+      showQuizQuestion();
+    }
 
-  const name = row.querySelector(".edit-name").value;
-  const h = parseInt(row.querySelector(".edit-h").value) || 0;
-  const m = parseInt(row.querySelector(".edit-m").value) || 0;
-  const s = parseInt(row.querySelector(".edit-s").value) || 0;
+    function normalize(str) { return str.trim().toLowerCase(); }
 
-  busy = true;
-  await api(`/update/${id}`, "POST", {
-    name,
-    hours: h,
-    minutes: m,
-    seconds: s
-  });
-  busy = false;
-  await syncState(true);
-}
+    function showQuizQuestion() {
+      if (currentIndex >= quizWords.length) return endQuiz();
+      currentQuestion = quizWords[currentIndex];
+      document.getElementById("quizTitle").textContent = `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
+      document.getElementById("quizQuestion").textContent =
+        quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
+      document.getElementById("answerInput").value = "";
+      document.getElementById("feedback").textContent = "";
+      document.getElementById("answerInput").focus();
+    }
 
-// הארכת משימה
-async function extendTask(id) {
-  const row = $("#row-" + id);
-  if (!row) return;
+    function checkAnswer() {
+      const userAnswer = document.getElementById("answerInput").value.trim();
+      if (!userAnswer) return;
+      const correctAnswer = quizDirection === "EN_HE" ? currentQuestion.he : currentQuestion.en;
+      if (normalize(userAnswer) === normalize(correctAnswer)) {
+        currentQuestion.correct = (currentQuestion.correct || 0) + 1;
+        document.getElementById("feedback").innerHTML = "✅ תשובה נכונה!";
+      } else {
+        currentQuestion.wrong = (currentQuestion.wrong || 0) + 1;
+        document.getElementById("feedback").innerHTML = `❌ תשובה שגויה. הנכון הוא: ${correctAnswer}`;
+      }
+      saveLists();
+      currentIndex++;
+      setTimeout(showQuizQuestion, 800);
+    }
 
-  const h = parseInt(row.querySelector(".ext-h").value) || 0;
-  const m = parseInt(row.querySelector(".ext-m").value) || 0;
-  const s = parseInt(row.querySelector(".ext-s").value) || 0;
+    function endQuiz() {
+      alert("החידון הסתיים ✅");
+      document.getElementById("quizArea").style.display = "none";
+      document.getElementById("lists").style.display = "block";
+      loadLists();
+    }
 
-  busy = true;
-  await api(`/extend/${id}`, "POST", {
-    hours: h,
-    minutes: m,
-    seconds: s
-  });
-  busy = false;
-  await syncState(true);
-}
+    async function importExcel() {
+      const fileInput = document.getElementById("excelFile");
+      if (!fileInput.files.length) return alert("בחר קובץ Excel");
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      const res = await fetch("/api/import_excel", { method: "POST", body: formData });
+      const data = await res.json();
+      alert(data.message);
+      loadLists();
+    }
 
-// העברת משימה
-async function moveTask(id) {
-  const row = $("#row-" + id);
-  if (!row) return;
+    function backToLists() {
+      document.getElementById("listView").style.display = "none";
+      document.getElementById("lists").style.display = "block";
+      showLists();
+    }
 
-  let newPos = parseInt(row.querySelector(".move-to").value) || 1;
-  if (newPos < 1) newPos = 1;
-
-  busy = true;
-  await api("/reorder_single", "POST", {
-    task_id: id,
-    new_position: newPos
-  });
-  busy = false;
-  await syncState(true);
-}
-
-// הוספת משימה חדשה – תמיד מיקום 1 כברירת מחדל
-$("#btnAdd").onclick = async () => {
-  const name = $("#newName").value.trim() || "משימה חדשה";
-  const h = parseInt($("#newH").value) || 0;
-  const m = parseInt($("#newM").value) || 0;
-  const s = parseInt($("#newS").value) || 0;
-
-  let pos = parseInt($("#newPos").value) || 1;
-  if (pos < 1) pos = 1;
-
-  busy = true;
-  await api("/add", "POST", {
-    name,
-    hours: h,
-    minutes: m,
-    seconds: s,
-    insert_position: pos
-  });
-  busy = false;
-
-  // החזרה לברירת מחדל
-  $("#newName").value = "";
-  $("#newH").value = 0;
-  $("#newM").value = 0;
-  $("#newS").value = 0;
-  $("#newPos").value = 1;
-
-  await syncState(true);
-};
-
-// כל המשימות ל-Pending
-$("#btnAllPending").onclick = async () => {
-  busy = true;
-  await api("/set_all_pending", "POST");
-  busy = false;
-  await syncState(true);
-};
-
-// הצג/הסתר סימולציה
-$("#btnSimToggle").onclick = () => {
-  showSimulation = !showSimulation;
-  $("#btnSimToggle").textContent = showSimulation ? "הסתר סימולציה" : "הצג סימולציה";
-  renderAll();
-};
-
-$("#simStartTime").addEventListener("change", () => {
-  if (showSimulation) renderAll();
-});
-
-// ייצוא
-$("#btnExport").onclick = async () => {
-  const res = await fetch("/export");
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "tasks_export.json";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
-
-// ייבוא
-$("#fileImport").addEventListener("change", async (ev) => {
-  const file = ev.target.files[0];
-  if (!file) return;
-
-  const txt = await file.text();
-  try {
-    const json = JSON.parse(txt);
-    busy = true;
-    await api("/import", "POST", json);
-    busy = false;
-    await syncState(true);
-  } catch (e) {
-    alert("קובץ ייבוא לא תקין");
-  } finally {
-    ev.target.value = "";
-  }
-});
-
-// עדכון שעון ושעת סיום כוללת בצד לקוח
-setInterval(() => {
-  $("#now").textContent = new Date().toLocaleTimeString("he-IL", { hour12: false });
-  $("#overallEnd").textContent = computeOverallEndLocal();
-}, 1000);
-
-// סנכרון תקופתי מהשרת (כשאין פעולה)
-setInterval(() => {
-  syncState(false);
-}, 2500);
-
-// סנכרון ראשון בהעלאת הדף
-syncState(true);
-</script>
-
+    loadLists();
+  </script>
 </body>
 </html>
