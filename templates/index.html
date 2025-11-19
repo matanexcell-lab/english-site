@@ -50,6 +50,7 @@
     }
     .success { color: green; }
     .fail { color: red; }
+
     #quizArea { display: none; }
     #answerInput {
       padding: 10px;
@@ -59,6 +60,7 @@
       border: 1px solid #999;
       margin-top: 10px;
     }
+
     #directionPopup {
       display: none;
       position: fixed;
@@ -77,28 +79,19 @@
       text-align: center;
       width: 300px;
     }
-    #movePopup {
-      display:none;
-      position:fixed;
-      top:0; left:0;
-      width:100%; height:100%;
-      background:rgba(0,0,0,0.6);
-      align-items:center;
-      justify-content:center;
-      z-index:2000;
-    }
-    #moveBox {
-      background:white;
-      padding:20px;
-      width:280px;
-      border-radius:10px;
-      text-align:center;
+
+    /* כפתור המשך */
+    #continueBtn {
+      display: none;
+      background: #28a745;
+      margin-top: 10px;
     }
   </style>
 </head>
 
 <body>
   <div class="container">
+
     <h1>📘 אתר לימוד מילים באנגלית</h1>
 
     <h3>➕ יצירת רשימה חדשה</h3>
@@ -127,14 +120,21 @@
     <div id="quizArea">
       <h3 id="quizTitle"></h3>
       <div id="quizQuestion"></div>
-      <input type="text" id="answerInput" placeholder="הקלד את התרגום..." onkeypress="if(event.key==='Enter') checkAnswer()" />
+
+      <input type="text" id="answerInput"
+        placeholder="הקלד את התרגום..."
+        onkeypress="if(event.key==='Enter') checkAnswer()" />
+
       <div id="feedback"></div>
+
       <button onclick="checkAnswer()">בדוק תשובה</button>
       <button onclick="endQuiz()">✖️ סיים חידון</button>
+
+      <!-- כפתור המשך חדש -->
+      <button id="continueBtn" onclick="continueQuizAnyway()">▶️ המשך בכל זאת</button>
     </div>
   </div>
 
-  <!-- חלון בחירת כיוון -->
   <div id="directionPopup">
     <div id="popupBox">
       <h3>בחר סוג חידון:</h3>
@@ -145,315 +145,276 @@
     </div>
   </div>
 
-  <!-- חלון העברת מילה -->
-  <div id="movePopup">
-    <div id="moveBox">
-      <h3>העבר מילה לרשימה אחרת</h3>
-      <div id="moveWordName"></div>
-      <select id="moveSelect"></select><br><br>
-      <button onclick="confirmMove()">העבר</button>
-      <button style="background:#999" onclick="closeMovePopup()">בטל</button>
-    </div>
-  </div>
+<script>
 
-  <script>
-    let allData = {};
-    let lastQuizDates = {};
-    let currentList = null;
-    let quizWords = [];
-    let currentIndex = 0;
-    let currentQuestion = null;
-    let quizDirection = "EN_HE";
+let allData = {};
+let lastQuizDates = {};
+let currentList = null;
+let quizWords = [];
+let currentIndex = 0;
+let currentQuestion = null;
+let quizDirection = "EN_HE";
 
-    let moveWordValue = null;
+async function loadLists() {
+  const res = await fetch("/api/lists");
+  allData = await res.json();
 
-    async function loadLists() {
-      const res = await fetch("/api/lists");
-      allData = await res.json();
-      const res2 = await fetch("/api/last_quiz_dates");
-      lastQuizDates = await res2.json();
-      showLists();
-    }
+  const res2 = await fetch("/api/last_quiz_dates");
+  lastQuizDates = await res2.json();
 
-    function showLists() {
-      const listsDiv = document.getElementById("lists");
-      listsDiv.innerHTML = "";
-      document.getElementById("listView").style.display = "none";
-      document.getElementById("quizArea").style.display = "none";
+  showLists();
+}
 
-      const sorted = Object.entries(allData).sort((a, b) => {
-        const da = new Date(lastQuizDates[a[0]] || 0);
-        const db = new Date(lastQuizDates[b[0]] || 0);
-        return db - da;
-      });
+function showLists() {
+  const listsDiv = document.getElementById("lists");
+  listsDiv.innerHTML = "";
+  document.getElementById("listView").style.display = "none";
+  document.getElementById("quizArea").style.display = "none";
 
-      for (const [name, words] of sorted) {
-        const correct = words.reduce((a, w) => a + (w.correct || 0), 0);
-        const wrong = words.reduce((a, w) => a + (w.wrong || 0), 0);
-        const lastQuiz = lastQuizDates[name] || "—";
+  const sorted = Object.entries(allData).sort((a,b)=>{
+    const da = new Date(lastQuizDates[a[0]] || 0);
+    const db = new Date(lastQuizDates[b[0]] || 0);
+    return db - da;
+  });
 
-        const div = document.createElement("div");
-        div.innerHTML = `
-          <h3>${name}</h3>
-          <p>מילים: ${words.length}  ✔️ ${correct} ❌ ${wrong}</p>
-          <p>📅 נבחנת לאחרונה: ${lastQuiz}</p>
-          <button onclick="manageList('${name}')">נהל</button>
-          <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
-        `;
-        listsDiv.appendChild(div);
-      }
-    }
+  for (const [name, words] of sorted) {
+    const correct = words.reduce((a,w)=>a+(w.correct||0),0);
+    const wrong = words.reduce((a,w)=>a+(w.wrong||0),0);
+    const lastQuiz = lastQuizDates[name] || "—";
 
-    function manageList(name) {
-      currentList = name;
-      document.getElementById("listTitle").textContent = "ניהול רשימה: " + name;
-      document.getElementById("lists").innerHTML = "";
-      document.getElementById("listView").style.display = "block";
-      showWords();
-    }
+    const div = document.createElement("div");
+    div.innerHTML = `
+      <h3>${name}</h3>
+      <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
+      <p>📅 נבחנת לאחרונה: ${lastQuiz}</p>
+      <button onclick="manageList('${name}')">נהל</button>
+      <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
+    `;
+    listsDiv.appendChild(div);
+  }
+}
 
-    function showWords() {
-      const ul = document.getElementById("wordsList");
-      ul.innerHTML = "";
-      const words = allData[currentList];
+function createList() {
+  const name = document.getElementById("newListName").value.trim();
+  if (!name) return alert("❗ הזן שם רשימה");
+  if (allData[name]) return alert("❗ רשימה בשם זה כבר קיימת");
 
-      for (const w of words) {
-        const ratio = (w.wrong + 1) / (w.correct + 1);
-        const isKnown = ratio < 1;
+  allData[name] = [];
+  saveLists();
+  showLists();
 
-        const li = document.createElement("li");
-        li.className = "word-item";
-        if (isKnown) li.style.background = "#e6ffe6";
+  document.getElementById("newListName").value = "";
+}
 
-        li.innerHTML = `
-          <div><b>${w.en}</b> — ${w.he} ${isKnown ? "<span style='color:green;'>✔ מילה שאני יודע</span>" : ""}</div>
-          <div>🔥 יחס: ${ratio.toFixed(2)} <span class="success">✔ ${w.correct}</span> <span class="fail">✖ ${w.wrong}</span></div>
-          <button onclick="editWord('${w.en}')">✏️ ערוך</button>
-          <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
-          <button onclick="moveWord('${w.en}')">➡️ העבר</button>
-        `;
-        ul.appendChild(li);
-      }
-    }
+function manageList(name) {
+  currentList = name;
+  document.getElementById("listTitle").textContent = "ניהול רשימה: "+name;
+  document.getElementById("lists").innerHTML = "";
+  document.getElementById("listView").style.display = "block";
+  showWords();
+}
 
-    function moveWord(word) {
-      moveWordValue = word;
-      document.getElementById("moveWordName").innerHTML = "מילה: <b>" + word + "</b>";
+function showWords() {
+  const ul = document.getElementById("wordsList");
+  ul.innerHTML = "";
 
-      const sel = document.getElementById("moveSelect");
-      sel.innerHTML = "";
+  const words = allData[currentList];
+  for (const w of words) {
+    const ratio = w.wrong + w.correct > 0 ? (w.wrong / (w.correct + 1)).toFixed(2) : "0.00";
 
-      for (const listName of Object.keys(allData)) {
-        if (listName !== currentList) {
-          const opt = document.createElement("option");
-          opt.value = listName;
-          opt.textContent = listName;
-          sel.appendChild(opt);
-        }
-      }
+    const li = document.createElement("li");
+    li.className = "word-item";
+    li.innerHTML = `
+      <div><b>${w.en}</b> — ${w.he}</div>
+      <div>🔥 יחס: ${ratio} <span class="success">✅ ${w.correct}</span><span class="fail">❌ ${w.wrong}</span></div>
+      <button onclick="editWord('${w.en}')">✏️ ערוך</button>
+      <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
+    `;
+    ul.appendChild(li);
+  }
+}
 
-      document.getElementById("movePopup").style.display = "flex";
-    }
+function addWord() {
+  const en = document.getElementById("newWordEN").value.trim();
+  const he = document.getElementById("newWordHE").value.trim();
 
-    function closeMovePopup() {
-      moveWordValue = null;
-      document.getElementById("movePopup").style.display = "none";
-    }
+  if (!en || !he) return alert("❗ מלא את שני השדות");
 
-    async function confirmMove() {
-      const toList = document.getElementById("moveSelect").value;
-      const res = await fetch("/api/move_word", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from_list: currentList,
-          to_list: toList,
-          word: moveWordValue
-        })
-      });
+  if (allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase()))
+    return alert("המילה כבר קיימת!");
 
-      const data = await res.json();
-      alert(data.message);
-      loadLists();
-      closeMovePopup();
-    }
+  allData[currentList].push({ en, he, correct:0, wrong:0 });
+  saveLists();
+  showWords();
 
-    function addWord() {
-      const en = document.getElementById("newWordEN").value.trim();
-      const he = document.getElementById("newWordHE").value.trim();
-      if (!en || !he) return alert("❗ מלא שני שדות");
+  document.getElementById("newWordEN").value = "";
+  document.getElementById("newWordHE").value = "";
+}
 
-      const exists = allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase());
-      if (exists) return alert("❗ מילה כבר קיימת");
+function deleteWord(en) {
+  allData[currentList] = allData[currentList].filter(w => w.en !== en);
+  saveLists();
+  showWords();
+}
 
-      allData[currentList].push({ en, he, correct: 0, wrong: 0 });
-      saveLists();
-      showWords();
-    }
+function editWord(en) {
+  const word = allData[currentList].find(w => w.en === en);
+  if (!word) return;
 
-    function deleteWord(en) {
-      allData[currentList] = allData[currentList].filter(w => w.en !== en);
-      saveLists();
-      showWords();
-    }
+  const newEN = prompt("מילה באנגלית:", word.en) || word.en;
+  const newHE = prompt("תרגום בעברית:", word.he) || word.he;
 
-    function editWord(en) {
-      const w = allData[currentList].find(w => w.en === en);
-      if (!w) return;
+  word.en = newEN;
+  word.he = newHE;
 
-      const newEN = prompt("מילה באנגלית:", w.en) || w.en;
-      const newHE = prompt("תרגום בעברית:", w.he) || w.he;
+  saveLists();
+  showWords();
+}
 
-      w.en = newEN;
-      w.he = newHE;
+async function saveLists() {
+  for (const [name, words] of Object.entries(allData)) {
+    await fetch("/api/lists", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json"},
+      body: JSON.stringify({name, words})
+    });
+  }
+}
 
-      saveLists();
-      showWords();
-    }
+function openPopup(listName) {
+  currentList = listName;
+  document.getElementById("directionPopup").style.display = "flex";
+}
+function closePopup() {
+  document.getElementById("directionPopup").style.display = "none";
+}
+function setQuizDirection(dir) {
+  quizDirection = dir;
+  closePopup();
+  startQuiz();
+}
 
-    async function saveLists() {
-      for (const [name, words] of Object.entries(allData)) {
-        await fetch("/api/lists", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, words })
-        });
-      }
-    }
+async function startQuiz() {
+  const words = [...allData[currentList]];
+  if (words.length === 0) return alert("אין מילים");
 
-    // ----------------- חידון -----------------
+  quizWords = words.sort((a,b)=>((b.wrong+1)/(b.correct+1))-((a.wrong+1)/(a.correct+1)));
+  currentIndex = 0;
 
-    function openPopup(listName) {
-      currentList = listName;
-      document.getElementById("directionPopup").style.display = "flex";
-    }
+  const now = new Date().toLocaleString("he-IL");
+  await fetch("/api/update_quiz_date", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json"},
+    body: JSON.stringify({list_name:currentList})
+  });
 
-    function closePopup() {
-      document.getElementById("directionPopup").style.display = "none";
-    }
+  saveLists();
 
-    function setQuizDirection(dir) {
-      quizDirection = dir;
-      closePopup();
-      startQuiz();
-    }
+  document.getElementById("lists").style.display = "none";
+  document.getElementById("quizArea").style.display = "block";
 
-    async function startQuiz() {
-      const words = [...allData[currentList]];
-      if (words.length === 0) return alert("אין מילים בחידון הזה");
+  showQuizQuestion();
+}
 
-      quizWords = words.sort((a, b) =>
-        ((b.wrong + 1) / (b.correct + 1)) - ((a.wrong + 1) / (a.correct + 1))
-      );
+function normalize(s){ return s.trim().toLowerCase(); }
 
-      currentIndex = 0;
+function showQuizQuestion() {
 
-      const now = new Date().toLocaleString("he-IL");
-      await fetch("/api/update_quiz_date", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ list_name: currentList })
-      });
+  if (currentIndex >= quizWords.length) return endQuiz();
 
-      saveLists();
+  const remaining = quizWords.slice(currentIndex);
+  const knownOnly = remaining.every(w => {
+    const ratio = (w.wrong + 1) / (w.correct + 1);
+    return ratio < 1;
+  });
 
-      document.getElementById("lists").style.display = "none";
-      document.getElementById("quizArea").style.display = "block";
+  if (knownOnly && remaining.length > 0) {
 
-      showQuizQuestion();
-    }
+    document.getElementById("quizQuestion").innerHTML =
+      "🎉 כל המילים שנותרו הן מילים שאתה כבר יודע!<br>באפשרותך לסיים או להמשיך את החידון.";
 
-    function normalize(s) {
-      return s.trim().toLowerCase();
-    }
+    document.getElementById("answerInput").style.display = "none";
+    document.getElementById("continueBtn").style.display = "inline-block";
 
-    // ★★★★★ הפיצ'ר החדש כאן ★★★★★
-    function showQuizQuestion() {
-      // סיום חידון רגיל
-      if (currentIndex >= quizWords.length)
-        return endQuiz();
+    document.getElementById("feedback").textContent = "";
+    return;
+  }
 
-      const remaining = quizWords.slice(currentIndex);
-      const knownOnly = remaining.every(w => {
-        const ratio = (w.wrong + 1) / (w.correct + 1);
-        return ratio < 1;
-      });
+  document.getElementById("continueBtn").style.display = "none";
 
-      if (knownOnly && remaining.length > 0) {
-        document.getElementById("quizQuestion").innerHTML =
-          "🎉 כל המילים שנותרו הן מילים שאתה כבר יודע!<br>באפשרותך לסיים את החידון.";
-        
-        document.getElementById("answerInput").style.display = "none";
-        document.getElementById("feedback").textContent = "";
-        return;
-      }
+  currentQuestion = quizWords[currentIndex];
 
-      currentQuestion = quizWords[currentIndex];
+  document.getElementById("quizTitle").textContent =
+    `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
 
-      document.getElementById("quizTitle").textContent =
-        `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
+  document.getElementById("quizQuestion").textContent =
+    quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
 
-      document.getElementById("quizQuestion").textContent =
-        quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
+  document.getElementById("answerInput").style.display = "inline-block";
+  document.getElementById("answerInput").value = "";
+  document.getElementById("feedback").textContent = "";
+  document.getElementById("answerInput").focus();
+}
 
-      document.getElementById("answerInput").style.display = "inline-block";
-      document.getElementById("answerInput").value = "";
-      document.getElementById("feedback").textContent = "";
-      document.getElementById("answerInput").focus();
-    }
+function continueQuizAnyway() {
+  document.getElementById("continueBtn").style.display = "none";
+  document.getElementById("answerInput").style.display = "inline-block";
+  showQuizQuestion();
+}
 
-    function checkAnswer() {
-      const txt = document.getElementById("answerInput").value.trim();
-      if (!txt) return;
+function checkAnswer() {
+  const userAnswer = document.getElementById("answerInput").value.trim();
+  if (!userAnswer) return;
 
-      const correct = quizDirection === "EN_HE"
-        ? currentQuestion.he
-        : currentQuestion.en;
+  const correctAns = quizDirection === "EN_HE"
+    ? currentQuestion.he
+    : currentQuestion.en;
 
-      if (normalize(txt) === normalize(correct)) {
-        currentQuestion.correct++;
-        document.getElementById("feedback").innerHTML = "✔ תשובה נכונה!";
-      } else {
-        currentQuestion.wrong++;
-        document.getElementById("feedback").innerHTML =
-          `✖ טעות. התשובה הנכונה: ${correct}`;
-      }
+  if (normalize(userAnswer) === normalize(correctAns)) {
+    currentQuestion.correct = (currentQuestion.correct||0) + 1;
+    document.getElementById("feedback").innerHTML = "✅ תשובה נכונה!";
+  }
+  else {
+    currentQuestion.wrong = (currentQuestion.wrong||0) + 1;
+    document.getElementById("feedback").innerHTML =
+      `❌ לא נכון! התשובה היא: ${correctAns}`;
+  }
 
-      saveLists();
-      currentIndex++;
-      setTimeout(showQuizQuestion, 600);
-    }
+  saveLists();
+  currentIndex++;
 
-    function endQuiz() {
-      alert("החידון הסתיים!");
-      document.getElementById("quizArea").style.display = "none";
-      loadLists();
-    }
+  setTimeout(showQuizQuestion, 700);
+}
 
-    async function importExcel() {
-      const f = document.getElementById("excelFile");
-      if (!f.files.length) return alert("בחר קובץ");
+function endQuiz() {
+  alert("החידון הסתיים! 🎉");
+  document.getElementById("quizArea").style.display = "none";
+  document.getElementById("lists").style.display = "block";
+  loadLists();
+}
 
-      const FD = new FormData();
-      FD.append("file", f.files[0]);
+async function importExcel() {
+  const f = document.getElementById("excelFile");
+  if (!f.files.length) return alert("בחר קובץ");
 
-      const res = await fetch("/api/import_excel", {
-        method: "POST",
-        body: FD
-      });
+  const fd = new FormData();
+  fd.append("file", f.files[0]);
 
-      const out = await res.json();
-      alert(out.message);
-      loadLists();
-    }
+  const res = await fetch("/api/import_excel", {method:"POST", body:fd});
+  const data = await res.json();
 
-    function backToLists() {
-      document.getElementById("listView").style.display = "none";
-      document.getElementById("lists").style.display = "block";
-      loadLists();
-    }
+  alert(data.message);
+  loadLists();
+}
 
-    loadLists();
-  </script>
+function backToLists() {
+  document.getElementById("listView").style.display = "none";
+  document.getElementById("lists").style.display = "block";
+  showLists();
+}
+
+loadLists();
+
+</script>
 </body>
 </html>
