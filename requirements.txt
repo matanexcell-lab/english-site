@@ -5,3 +5,5 @@ pandas
 openpyxl
 xlsxwriter
 requests
+SQLAlchemy
+psycopg2-binary
