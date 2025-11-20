@@ -142,7 +142,6 @@
       <button style="background:#999" onclick="closePopup()">ביטול</button>
     </div>
   </div>
-
 <script>
 
 let allData = {};
@@ -153,6 +152,7 @@ let currentIndex = 0;
 let currentQuestion = null;
 let quizDirection = "EN_HE";
 
+/* ---------------------- טעינת רשימות מהשרת ---------------------- */
 async function loadLists() {
   const res = await fetch("/api/lists");
   allData = await res.json();
@@ -163,6 +163,7 @@ async function loadLists() {
   showLists();
 }
 
+/* ---------------------- הצגת כל הרשימות ---------------------- */
 function showLists() {
   const listsDiv = document.getElementById("lists");
   listsDiv.innerHTML = "";
@@ -192,6 +193,7 @@ function showLists() {
   }
 }
 
+/* ---------------------- יצירת רשימה חדשה ---------------------- */
 function createList() {
   const name = document.getElementById("newListName").value.trim();
   if (!name) return alert("❗ הזן שם רשימה");
@@ -204,6 +206,7 @@ function createList() {
   document.getElementById("newListName").value = "";
 }
 
+/* ---------------------- ניהול רשימה ---------------------- */
 function manageList(name) {
   currentList = name;
   document.getElementById("listTitle").textContent = "ניהול רשימה: "+name;
@@ -212,6 +215,7 @@ function manageList(name) {
   showWords();
 }
 
+/* ---------------------- הצגת מילים ברשימה ---------------------- */
 function showWords() {
   const ul = document.getElementById("wordsList");
   ul.innerHTML = "";
@@ -232,6 +236,7 @@ function showWords() {
   }
 }
 
+/* ---------------------- הוספת מילה ---------------------- */
 function addWord() {
   const en = document.getElementById("newWordEN").value.trim();
   const he = document.getElementById("newWordHE").value.trim();
@@ -249,12 +254,14 @@ function addWord() {
   document.getElementById("newWordHE").value = "";
 }
 
+/* ---------------------- מחיקה ---------------------- */
 function deleteWord(en) {
   allData[currentList] = allData[currentList].filter(w => w.en !== en);
   saveLists();
   showWords();
 }
 
+/* ---------------------- עריכת מילה ---------------------- */
 function editWord(en) {
   const word = allData[currentList].find(w => w.en === en);
   if (!word) return;
@@ -269,6 +276,7 @@ function editWord(en) {
   showWords();
 }
 
+/* ---------------------- שמירת הרשימות במסד ---------------------- */
 async function saveLists() {
   for (const [name, words] of Object.entries(allData)) {
     await fetch("/api/lists", {
@@ -279,6 +287,7 @@ async function saveLists() {
   }
 }
 
+/* ---------------------- חלון בחירת כיוון חידון ---------------------- */
 function openPopup(listName) {
   currentList = listName;
   document.getElementById("directionPopup").style.display = "flex";
@@ -292,14 +301,15 @@ function setQuizDirection(dir) {
   startQuiz();
 }
 
+/* ---------------------- התחלת חידון ---------------------- */
 async function startQuiz() {
   const words = [...allData[currentList]];
   if (words.length === 0) return alert("אין מילים");
 
+  // ממיין לפי יחס שגיאות
   quizWords = words.sort((a,b)=>((b.wrong+1)/(b.correct+1))-((a.wrong+1)/(a.correct+1)));
   currentIndex = 0;
 
-  const now = new Date().toLocaleString("he-IL");
   await fetch("/api/update_quiz_date", {
     method:"POST",
     headers:{ "Content-Type":"application/json"},
@@ -314,6 +324,7 @@ async function startQuiz() {
   showQuizQuestion();
 }
 
+/* ---------------------- פונקציות חידון ---------------------- */
 function normalize(s){ return s.trim().toLowerCase(); }
 
 function showQuizQuestion() {
@@ -354,16 +365,18 @@ function showQuizQuestion() {
   document.getElementById("answerInput").focus();
 }
 
+/* ---------------------- המשך חידון – מתוקן ---------------------- */
 function continueQuizAnyway() {
 
   document.getElementById("continueBtn").style.display = "none";
   document.getElementById("answerInput").style.display = "inline-block";
 
-  currentIndex++;   // ⚡ מעבר לשאלה הבאה
+  currentIndex++;   // ⚡ עובר לשאלה הבאה
 
   showQuizQuestion();
 }
 
+/* ---------------------- בדיקת תשובה ---------------------- */
 function checkAnswer() {
   const userAnswer = document.getElementById("answerInput").value.trim();
   if (!userAnswer) return;
@@ -388,6 +401,7 @@ function checkAnswer() {
   setTimeout(showQuizQuestion, 700);
 }
 
+/* ---------------------- סיום חידון ---------------------- */
 function endQuiz() {
   alert("החידון הסתיים! 🎉");
   document.getElementById("quizArea").style.display = "none";
@@ -395,6 +409,7 @@ function endQuiz() {
   loadLists();
 }
 
+/* ---------------------- ייבוא מקובץ ---------------------- */
 async function importExcel() {
   const f = document.getElementById("excelFile");
   if (!f.files.length) return alert("בחר קובץ");
@@ -409,6 +424,7 @@ async function importExcel() {
   loadLists();
 }
 
+/* ---------------------- חזרה לרשימות ---------------------- */
 function backToLists() {
   document.getElementById("listView").style.display = "none";
   document.getElementById("lists").style.display = "block";
