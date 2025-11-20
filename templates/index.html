@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>📘 אתר לימוד מילים באנגלית</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -80,7 +81,6 @@
       width: 300px;
     }
 
-    /* כפתור המשך */
     #continueBtn {
       display: none;
       background: #28a745;
@@ -91,7 +91,6 @@
 
 <body>
   <div class="container">
-
     <h1>📘 אתר לימוד מילים באנגלית</h1>
 
     <h3>➕ יצירת רשימה חדשה</h3>
@@ -130,7 +129,6 @@
       <button onclick="checkAnswer()">בדוק תשובה</button>
       <button onclick="endQuiz()">✖️ סיים חידון</button>
 
-      <!-- כפתור המשך חדש -->
       <button id="continueBtn" onclick="continueQuizAnyway()">▶️ המשך בכל זאת</button>
     </div>
   </div>
@@ -357,8 +355,12 @@ function showQuizQuestion() {
 }
 
 function continueQuizAnyway() {
+
   document.getElementById("continueBtn").style.display = "none";
   document.getElementById("answerInput").style.display = "inline-block";
+
+  currentIndex++;   // ⚡ מעבר לשאלה הבאה
+
   showQuizQuestion();
 }
 
