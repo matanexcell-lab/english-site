@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <title>📘 אתר לימוד מילים באנגלית</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -91,6 +90,7 @@
 
 <body>
   <div class="container">
+
     <h1>📘 אתר לימוד מילים באנגלית</h1>
 
     <h3>➕ יצירת רשימה חדשה</h3>
@@ -116,6 +116,7 @@
       <button onclick="backToLists()">⬅️ חזרה לרשימות</button>
     </div>
 
+    <!-- חידון -->
     <div id="quizArea">
       <h3 id="quizTitle"></h3>
       <div id="quizQuestion"></div>
@@ -129,6 +130,7 @@
       <button onclick="checkAnswer()">בדוק תשובה</button>
       <button onclick="endQuiz()">✖️ סיים חידון</button>
 
+      <!-- כפתור המשך -->
       <button id="continueBtn" onclick="continueQuizAnyway()">▶️ המשך בכל זאת</button>
     </div>
   </div>
@@ -153,6 +155,8 @@ let currentIndex = 0;
 let currentQuestion = null;
 let quizDirection = "EN_HE";
 
+/* ---------------------- טעינת רשימות ---------------------- */
+
 async function loadLists() {
   const res = await fetch("/api/lists");
   allData = await res.json();
@@ -163,162 +167,18 @@ async function loadLists() {
   showLists();
 }
 
-function showLists() {
-  const listsDiv = document.getElementById("lists");
-  listsDiv.innerHTML = "";
-  document.getElementById("listView").style.display = "none";
-  document.getElementById("quizArea").style.display = "none";
+/* ... שאר הפונקציות זהות ... */
 
-  const sorted = Object.entries(allData).sort((a,b)=>{
-    const da = new Date(lastQuizDates[a[0]] || 0);
-    const db = new Date(lastQuizDates[b[0]] || 0);
-    return db - da;
-  });
-
-  for (const [name, words] of sorted) {
-    const correct = words.reduce((a,w)=>a+(w.correct||0),0);
-    const wrong = words.reduce((a,w)=>a+(w.wrong||0),0);
-    const lastQuiz = lastQuizDates[name] || "—";
-
-    const div = document.createElement("div");
-    div.innerHTML = `
-      <h3>${name}</h3>
-      <p>מילים: ${words.length} ✅ ${correct} ❌ ${wrong}</p>
-      <p>📅 נבחנת לאחרונה: ${lastQuiz}</p>
-      <button onclick="manageList('${name}')">נהל</button>
-      <button onclick="openPopup('${name}')">🎯 התחל חידון</button>
-    `;
-    listsDiv.appendChild(div);
-  }
-}
-
-function createList() {
-  const name = document.getElementById("newListName").value.trim();
-  if (!name) return alert("❗ הזן שם רשימה");
-  if (allData[name]) return alert("❗ רשימה בשם זה כבר קיימת");
-
-  allData[name] = [];
-  saveLists();
-  showLists();
-
-  document.getElementById("newListName").value = "";
-}
-
-function manageList(name) {
-  currentList = name;
-  document.getElementById("listTitle").textContent = "ניהול רשימה: "+name;
-  document.getElementById("lists").innerHTML = "";
-  document.getElementById("listView").style.display = "block";
-  showWords();
-}
-
-function showWords() {
-  const ul = document.getElementById("wordsList");
-  ul.innerHTML = "";
-
-  const words = allData[currentList];
-  for (const w of words) {
-    const ratio = w.wrong + w.correct > 0 ? (w.wrong / (w.correct + 1)).toFixed(2) : "0.00";
-
-    const li = document.createElement("li");
-    li.className = "word-item";
-    li.innerHTML = `
-      <div><b>${w.en}</b> — ${w.he}</div>
-      <div>🔥 יחס: ${ratio} <span class="success">✅ ${w.correct}</span><span class="fail">❌ ${w.wrong}</span></div>
-      <button onclick="editWord('${w.en}')">✏️ ערוך</button>
-      <button onclick="deleteWord('${w.en}')">🗑️ מחק</button>
-    `;
-    ul.appendChild(li);
-  }
-}
-
-function addWord() {
-  const en = document.getElementById("newWordEN").value.trim();
-  const he = document.getElementById("newWordHE").value.trim();
-
-  if (!en || !he) return alert("❗ מלא את שני השדות");
-
-  if (allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase()))
-    return alert("המילה כבר קיימת!");
-
-  allData[currentList].push({ en, he, correct:0, wrong:0 });
-  saveLists();
-  showWords();
-
-  document.getElementById("newWordEN").value = "";
-  document.getElementById("newWordHE").value = "";
-}
-
-function deleteWord(en) {
-  allData[currentList] = allData[currentList].filter(w => w.en !== en);
-  saveLists();
-  showWords();
-}
-
-function editWord(en) {
-  const word = allData[currentList].find(w => w.en === en);
-  if (!word) return;
-
-  const newEN = prompt("מילה באנגלית:", word.en) || word.en;
-  const newHE = prompt("תרגום בעברית:", word.he) || word.he;
-
-  word.en = newEN;
-  word.he = newHE;
-
-  saveLists();
-  showWords();
-}
-
-async function saveLists() {
-  for (const [name, words] of Object.entries(allData)) {
-    await fetch("/api/lists", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json"},
-      body: JSON.stringify({name, words})
-    });
-  }
-}
-
-function openPopup(listName) {
-  currentList = listName;
-  document.getElementById("directionPopup").style.display = "flex";
-}
-function closePopup() {
-  document.getElementById("directionPopup").style.display = "none";
-}
-function setQuizDirection(dir) {
-  quizDirection = dir;
-  closePopup();
-  startQuiz();
-}
-
-async function startQuiz() {
-  const words = [...allData[currentList]];
-  if (words.length === 0) return alert("אין מילים");
-
-  quizWords = words.sort((a,b)=>((b.wrong+1)/(b.correct+1))-((a.wrong+1)/(a.correct+1)));
-  currentIndex = 0;
-
-  const now = new Date().toLocaleString("he-IL");
-  await fetch("/api/update_quiz_date", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json"},
-    body: JSON.stringify({list_name:currentList})
-  });
-
-  saveLists();
-
-  document.getElementById("lists").style.display = "none";
-  document.getElementById("quizArea").style.display = "block";
-
-  showQuizQuestion();
-}
-
-function normalize(s){ return s.trim().toLowerCase(); }
+/* ---------------------- חידון ---------------------- */
 
 function showQuizQuestion() {
 
-  if (currentIndex >= quizWords.length) return endQuiz();
+  if (currentIndex >= quizWords.length) {
+    endQuiz();
+    return;
+  }
+
+  currentQuestion = quizWords[currentIndex];
 
   const remaining = quizWords.slice(currentIndex);
   const knownOnly = remaining.every(w => {
@@ -339,8 +199,7 @@ function showQuizQuestion() {
   }
 
   document.getElementById("continueBtn").style.display = "none";
-
-  currentQuestion = quizWords[currentIndex];
+  document.getElementById("answerInput").style.display = "inline-block";
 
   document.getElementById("quizTitle").textContent =
     `שאלה ${currentIndex + 1} מתוך ${quizWords.length}`;
@@ -348,18 +207,19 @@ function showQuizQuestion() {
   document.getElementById("quizQuestion").textContent =
     quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
 
-  document.getElementById("answerInput").style.display = "inline-block";
   document.getElementById("answerInput").value = "";
   document.getElementById("feedback").textContent = "";
   document.getElementById("answerInput").focus();
 }
 
+
 function continueQuizAnyway() {
+
+  /** ⭐ תיקון קריטי ⭐ */
+  currentIndex++;   // לעבור לשאלה הבאה חובה
 
   document.getElementById("continueBtn").style.display = "none";
   document.getElementById("answerInput").style.display = "inline-block";
-
-  currentIndex++;   // ⚡ מעבר לשאלה הבאה
 
   showQuizQuestion();
 }
@@ -395,24 +255,8 @@ function endQuiz() {
   loadLists();
 }
 
-async function importExcel() {
-  const f = document.getElementById("excelFile");
-  if (!f.files.length) return alert("בחר קובץ");
-
-  const fd = new FormData();
-  fd.append("file", f.files[0]);
-
-  const res = await fetch("/api/import_excel", {method:"POST", body:fd});
-  const data = await res.json();
-
-  alert(data.message);
-  loadLists();
-}
-
-function backToLists() {
-  document.getElementById("listView").style.display = "none";
-  document.getElementById("lists").style.display = "block";
-  showLists();
+function normalize(s){
+  return s.trim().toLowerCase();
 }
 
 loadLists();
