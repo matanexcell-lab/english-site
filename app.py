@@ -2,25 +2,38 @@ import os
 import pandas as pd
 from datetime import datetime
 from flask import Flask, jsonify, request, send_file
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
+from sqlalchemy.exc import SQLAlchemyError
 from io import BytesIO
 
 # ---------------------------------------------------------
 # הגדרות בסיסיות
 # ---------------------------------------------------------
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://matan_nb_user:Qzcukb3uonnqU3wgDxKyzkxeEaT83PJp@dpg-d40u1m7gi27c73d0oorg-a.oregon-postgres.render.com/matan_nb"
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set in environment variables")
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    future=True
 )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 Session = scoped_session(sessionmaker(bind=engine, autoflush=False))
-
 Base = declarative_base()
 
+app = Flask(__name__)
+
+
+def get_db():
+    return Session()
+
+
 # ---------------------------------------------------------
-# מודלים למסד
+# מודלים
 # ---------------------------------------------------------
 
 class WordList(Base):
@@ -31,6 +44,7 @@ class WordList(Base):
     last_quiz = Column(String, nullable=True)
 
     words = relationship("Word", cascade="all, delete-orphan")
+
 
 class Word(Base):
     __tablename__ = "words"
@@ -46,67 +60,70 @@ class Word(Base):
 # יצירת טבלאות אם לא קיימות
 Base.metadata.create_all(engine)
 
-app = Flask(__name__)
-
-def get_db():
-    return Session()
-
 # ---------------------------------------------------------
-# API: GET כל הרשימות
+# API: קבלת רשימות
 # ---------------------------------------------------------
 
 @app.route("/api/lists")
 def api_lists():
-    db = get_db()
-    lists = db.query(WordList).all()
+    try:
+        db = get_db()
+        lists = db.query(WordList).all()
 
-    result = {}
-    for lst in lists:
-        result[lst.name] = [
-            {
-                "en": w.en,
-                "he": w.he,
-                "correct": w.correct,
-                "wrong": w.wrong
-            }
-            for w in lst.words
-        ]
+        result = {}
+        for lst in lists:
+            result[lst.name] = [
+                {
+                    "en": w.en,
+                    "he": w.he,
+                    "correct": w.correct,
+                    "wrong": w.wrong
+                }
+                for w in lst.words
+            ]
 
-    return jsonify(result)
+        return jsonify(result)
+
+    except SQLAlchemyError as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ---------------------------------------------------------
-# API: POST שמירת רשימה
+# API: שמירת רשימה
 # ---------------------------------------------------------
 
 @app.route("/api/lists", methods=["POST"])
 def api_save_list():
-    data = request.json
-    name = data.get("name")
-    words = data.get("words", [])
+    try:
+        data = request.json
+        name = data.get("name")
+        words = data.get("words", [])
 
-    db = get_db()
-    lst = db.query(WordList).filter_by(name=name).first()
+        db = get_db()
+        lst = db.query(WordList).filter_by(name=name).first()
 
-    if not lst:
-        lst = WordList(name=name)
-        db.add(lst)
+        if not lst:
+            lst = WordList(name=name)
+            db.add(lst)
+            db.commit()
+
+        db.query(Word).filter_by(list_id=lst.id).delete()
+
+        for w in words:
+            db.add(Word(
+                list_id=lst.id,
+                en=w["en"],
+                he=w["he"],
+                correct=w.get("correct", 0),
+                wrong=w.get("wrong", 0)
+            ))
+
         db.commit()
+        return jsonify({"ok": True})
 
-    # מוחקים מילים קיימות
-    db.query(Word).filter_by(list_id=lst.id).delete()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # מוסיפים מילים חדשות
-    for w in words:
-        db.add(Word(
-            list_id=lst.id,
-            en=w["en"],
-            he=w["he"],
-            correct=w.get("correct", 0),
-            wrong=w.get("wrong", 0)
-        ))
-
-    db.commit()
-    return jsonify({"ok": True})
 
 # ---------------------------------------------------------
 # API: תאריכי חידון
@@ -117,6 +134,7 @@ def api_last_quiz_dates():
     db = get_db()
     lists = db.query(WordList).all()
     return jsonify({l.name: l.last_quiz for l in lists})
+
 
 @app.route("/api/update_quiz_date", methods=["POST"])
 def api_update_quiz_date():
@@ -132,55 +150,60 @@ def api_update_quiz_date():
 
     return jsonify({"ok": True})
 
+
 # ---------------------------------------------------------
-# API: ייבוא קובץ Excel
+# API: ייבוא Excel
 # ---------------------------------------------------------
 
 @app.route("/api/import_excel", methods=["POST"])
 def api_import_excel():
-    if "file" not in request.files:
-        return jsonify({"ok": False, "message": "לא נשלח קובץ"})
+    try:
+        if "file" not in request.files:
+            return jsonify({"ok": False, "message": "לא נשלח קובץ"})
 
-    file = request.files["file"]
-    df = pd.read_excel(file)
+        file = request.files["file"]
+        df = pd.read_excel(file)
 
-    if df.empty:
-        return jsonify({"ok": False, "message": "קובץ ריק"})
+        if df.empty:
+            return jsonify({"ok": False, "message": "קובץ ריק"})
 
-    col_map = {c.lower(): c for c in df.columns}
+        col_map = {c.lower(): c for c in df.columns}
 
-    if "list" not in col_map:
-        df["list"] = "Default"
+        if "list" not in col_map:
+            df["list"] = "Default"
 
-    db = get_db()
+        db = get_db()
 
-    # מוחקים הכל
-    db.query(Word).delete()
-    db.query(WordList).delete()
-    db.commit()
-
-    grouped = df.groupby("list")
-
-    for list_name, group in grouped:
-        wl = WordList(name=str(list_name))
-        db.add(wl)
+        db.query(Word).delete()
+        db.query(WordList).delete()
         db.commit()
 
-        for _, row in group.iterrows():
-            db.add(Word(
-                list_id=wl.id,
-                en=str(row.get(col_map.get("en"), "")),
-                he=str(row.get(col_map.get("he"), "")),
-                correct=int(row.get(col_map.get("correct"), 0)),
-                wrong=int(row.get(col_map.get("wrong"), 0)),
-            ))
+        grouped = df.groupby("list")
 
-        db.commit()
+        for list_name, group in grouped:
+            wl = WordList(name=str(list_name))
+            db.add(wl)
+            db.commit()
 
-    return jsonify({"ok": True, "message": "הנתונים נטענו בהצלחה!"})
+            for _, row in group.iterrows():
+                db.add(Word(
+                    list_id=wl.id,
+                    en=str(row.get(col_map.get("en"), "")),
+                    he=str(row.get(col_map.get("he"), "")),
+                    correct=int(row.get(col_map.get("correct"), 0) or 0),
+                    wrong=int(row.get(col_map.get("wrong"), 0) or 0),
+                ))
+
+            db.commit()
+
+        return jsonify({"ok": True, "message": "הנתונים נטענו בהצלחה!"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ---------------------------------------------------------
-# API: הורד את כל הנתונים — עובד 100%
+# API: הורדת Excel
 # ---------------------------------------------------------
 
 @app.route("/api/download_excel")
@@ -216,7 +239,7 @@ def api_download_excel():
 
 
 # ---------------------------------------------------------
-# הפעלת האתר
+# עמוד ראשי
 # ---------------------------------------------------------
 
 @app.route("/")
@@ -224,7 +247,6 @@ def home():
     return send_file("templates/index.html")
 
 
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+# ---------------------------------------------------------
+# Gunicorn משתמש בזה – אין צורך ב-app.run()
+# ---------------------------------------------------------
