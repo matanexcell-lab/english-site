@@ -72,7 +72,18 @@ class Word(Base):
 Base.metadata.create_all(engine)
 
 # הוספת העמודה last_seen לטבלה קיימת (create_all לא מוסיף עמודות)
+# קודם סוגרים חיבורים "תקועים" של הגרסה הקודמת, שאחרת חוסמים את השינוי בטבלה
 with engine.begin() as conn:
+    conn.execute(text("""
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND state LIKE 'idle in transaction%'
+          AND pid <> pg_backend_pid()
+    """))
+
+with engine.begin() as conn:
+    conn.execute(text("SET LOCAL lock_timeout = '15s'"))
     conn.execute(text("ALTER TABLE words ADD COLUMN IF NOT EXISTS last_seen VARCHAR"))
 
 
