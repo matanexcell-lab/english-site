@@ -148,6 +148,7 @@
     <div id="quizArea">
       <h3 id="quizTitle"></h3>
       <div id="quizQuestion"></div>
+      <div id="quizSource" class="src"></div>
 
       <input type="text" id="answerInput"
         placeholder="הקלד את התרגום..."
@@ -592,6 +593,9 @@ function showQuizQuestion() {
 
   document.getElementById("quizQuestion").textContent =
     quizDirection === "EN_HE" ? currentQuestion.en : currentQuestion.he;
+
+  document.getElementById("quizSource").textContent =
+    currentList === UNKNOWN_LIST ? "📂 מתוך: " + wordListMap.get(currentQuestion) : "";
 
   const input = document.getElementById("answerInput");
   input.style.display = "inline-block";
