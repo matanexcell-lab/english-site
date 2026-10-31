@@ -6,4 +6,5 @@ openpyxl
 xlsxwriter
 requests
 SQLAlchemy
-psycopg2-binary
+psycopg2-binar
+psycopg[binary]
