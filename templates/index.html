@@ -370,7 +370,7 @@ function addWord() {
   if (allData[currentList].some(w => w.en.toLowerCase() === en.toLowerCase()))
     return alert("המילה כבר קיימת!");
 
-  allData[currentList].push({ en, he, correct:0, wrong:0, last_seen: today() });
+  allData[currentList].push({ en, he, correct:0, wrong:0, last_seen: null });
   saveLists([currentList]);
   showWords();
 
