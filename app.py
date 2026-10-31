@@ -1,8 +1,8 @@
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, send_file
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, ForeignKey, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
 from sqlalchemy.exc import SQLAlchemyError
 from io import BytesIO
@@ -15,6 +15,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set in environment variables")
+
+# כמה ימים בלי תרגול עד שמילה "ידועה" חוזרת לחידון והספירה שלה מתאפסת
+REVIEW_DAYS = 30
+DATE_FMT = "%Y-%m-%d"
 
 engine = create_engine(
     DATABASE_URL,
@@ -30,6 +34,12 @@ app = Flask(__name__)
 
 def get_db():
     return Session()
+
+
+@app.teardown_appcontext
+def remove_session(exc=None):
+    # סוגר את החיבור למסד בסוף כל בקשה
+    Session.remove()
 
 
 # ---------------------------------------------------------
@@ -55,13 +65,38 @@ class Word(Base):
     he = Column(String)
     correct = Column(Integer, default=0)
     wrong = Column(Integer, default=0)
+    last_seen = Column(String, nullable=True)   # YYYY-MM-DD – הפעם האחרונה שהמילה נשאלה
 
 
 # יצירת טבלאות אם לא קיימות
 Base.metadata.create_all(engine)
 
+# הוספת העמודה last_seen לטבלה קיימת (create_all לא מוסיף עמודות)
+with engine.begin() as conn:
+    conn.execute(text("ALTER TABLE words ADD COLUMN IF NOT EXISTS last_seen VARCHAR"))
+
+
+def parse_date(s):
+    try:
+        return datetime.strptime(str(s)[:10], DATE_FMT)
+    except (ValueError, TypeError):
+        return None
+
+
+def clean_value(v):
+    """ממיר NaN של pandas ל-None"""
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return v
+
+
 # ---------------------------------------------------------
-# API: קבלת רשימות
+# API: קבלת רשימות (כולל איפוס חודשי)
 # ---------------------------------------------------------
 
 @app.route("/api/lists")
@@ -70,17 +105,39 @@ def api_lists():
         db = get_db()
         lists = db.query(WordList).all()
 
+        now = datetime.now()
+        today_str = now.strftime(DATE_FMT)
+        changed = False
+
         result = {}
         for lst in lists:
+            for w in lst.words:
+                seen = parse_date(w.last_seen)
+
+                if seen is None:
+                    # מילים ישנות בלי תאריך – מתחילים לספור מהיום
+                    w.last_seen = today_str
+                    changed = True
+
+                elif (w.correct or 0) > (w.wrong or 0) and now - seen >= timedelta(days=REVIEW_DAYS):
+                    # מילה "ידועה" שלא תורגלה חודש – חוזרת לחידון מאפס
+                    w.correct = 0
+                    w.wrong = 0
+                    changed = True
+
             result[lst.name] = [
                 {
                     "en": w.en,
                     "he": w.he,
                     "correct": w.correct,
-                    "wrong": w.wrong
+                    "wrong": w.wrong,
+                    "last_seen": w.last_seen
                 }
                 for w in lst.words
             ]
+
+        if changed:
+            db.commit()
 
         return jsonify(result)
 
@@ -109,13 +166,15 @@ def api_save_list():
 
         db.query(Word).filter_by(list_id=lst.id).delete()
 
+        today_str = datetime.now().strftime(DATE_FMT)
         for w in words:
             db.add(Word(
                 list_id=lst.id,
                 en=w["en"],
                 he=w["he"],
                 correct=w.get("correct", 0),
-                wrong=w.get("wrong", 0)
+                wrong=w.get("wrong", 0),
+                last_seen=w.get("last_seen") or today_str
             ))
 
         db.commit()
@@ -171,6 +230,7 @@ def api_import_excel():
 
         if "list" not in col_map:
             df["list"] = "Default"
+            col_map["list"] = "list"
 
         db = get_db()
 
@@ -178,7 +238,8 @@ def api_import_excel():
         db.query(WordList).delete()
         db.commit()
 
-        grouped = df.groupby("list")
+        today_str = datetime.now().strftime(DATE_FMT)
+        grouped = df.groupby(col_map["list"])
 
         for list_name, group in grouped:
             wl = WordList(name=str(list_name))
@@ -186,12 +247,20 @@ def api_import_excel():
             db.commit()
 
             for _, row in group.iterrows():
+                def val(key, default=None):
+                    col = col_map.get(key)
+                    return clean_value(row.get(col)) if col else default
+
+                seen = val("last_seen")
+                seen_date = parse_date(seen) if seen is not None else None
+
                 db.add(Word(
                     list_id=wl.id,
-                    en=str(row.get(col_map.get("en"), "")),
-                    he=str(row.get(col_map.get("he"), "")),
-                    correct=int(row.get(col_map.get("correct"), 0) or 0),
-                    wrong=int(row.get(col_map.get("wrong"), 0) or 0),
+                    en=str(val("en", "") or ""),
+                    he=str(val("he", "") or ""),
+                    correct=int(val("correct", 0) or 0),
+                    wrong=int(val("wrong", 0) or 0),
+                    last_seen=seen_date.strftime(DATE_FMT) if seen_date else today_str
                 ))
 
             db.commit()
@@ -221,6 +290,7 @@ def api_download_excel():
                 "he": w.he,
                 "correct": w.correct,
                 "wrong": w.wrong,
+                "last_seen": w.last_seen,
                 "last_quiz": lst.last_quiz
             })
 
