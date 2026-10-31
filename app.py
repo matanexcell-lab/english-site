@@ -94,6 +94,55 @@ def parse_date(s):
         return None
 
 
+def parse_list_quiz(s):
+    """תאריך החידון האחרון של רשימה, בפורמט dd/mm/YYYY HH:MM"""
+    try:
+        return datetime.strptime(str(s), "%d/%m/%Y %H:%M")
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------
+# תיקון חד-פעמי: הגרסה הקודמת מילאה "תורגלה לאחרונה" בתאריך של היום
+# למילים שלא היה להן תאריך. מחזירים אותן לתאריך החידון האחרון של הרשימה.
+# ---------------------------------------------------------
+
+class AppMeta(Base):
+    __tablename__ = "app_meta"
+    key = Column(String, primary_key=True)
+    value = Column(String)
+
+
+Base.metadata.create_all(engine)
+
+AUTOFILL_DATE = "2026-10-31"
+FIX_KEY = "fix_autofilled_last_seen_v1"
+
+
+def fix_autofilled_dates():
+    db = Session()
+    try:
+        if db.get(AppMeta, FIX_KEY):
+            return
+
+        for lst in db.query(WordList).all():
+            lq = parse_list_quiz(lst.last_quiz)
+            # אם נבחנת על הרשימה היום – התאריך של היום נכון, לא נוגעים
+            if lq and lq.strftime(DATE_FMT) >= AUTOFILL_DATE:
+                continue
+            for w in lst.words:
+                if w.last_seen == AUTOFILL_DATE:
+                    w.last_seen = lq.strftime(DATE_FMT) if lq else None
+
+        db.add(AppMeta(key=FIX_KEY, value=datetime.now().isoformat()))
+        db.commit()
+    finally:
+        Session.remove()
+
+
+fix_autofilled_dates()
+
+
 def clean_value(v):
     """ממיר NaN של pandas ל-None"""
     if v is None:
@@ -123,14 +172,10 @@ def api_lists():
         result = {}
         for lst in lists:
             for w in lst.words:
-                seen = parse_date(w.last_seen)
+                # אין תאריך למילה? מעריכים לפי הפעם האחרונה שנבחנת על הרשימה
+                seen = parse_date(w.last_seen) or parse_list_quiz(lst.last_quiz)
 
-                if seen is None:
-                    # מילים ישנות בלי תאריך – מתחילים לספור מהיום
-                    w.last_seen = today_str
-                    changed = True
-
-                elif (w.correct or 0) > (w.wrong or 0) and now - seen >= timedelta(days=REVIEW_DAYS):
+                if seen and (w.correct or 0) > (w.wrong or 0) and now - seen >= timedelta(days=REVIEW_DAYS):
                     # מילה "ידועה" שלא תורגלה חודש – חוזרת לחידון מאפס
                     w.correct = 0
                     w.wrong = 0
@@ -185,7 +230,7 @@ def api_save_list():
                 he=w["he"],
                 correct=w.get("correct", 0),
                 wrong=w.get("wrong", 0),
-                last_seen=w.get("last_seen") or today_str
+                last_seen=w.get("last_seen") or None
             ))
 
         db.commit()
@@ -271,7 +316,7 @@ def api_import_excel():
                     he=str(val("he", "") or ""),
                     correct=int(val("correct", 0) or 0),
                     wrong=int(val("wrong", 0) or 0),
-                    last_seen=seen_date.strftime(DATE_FMT) if seen_date else today_str
+                    last_seen=seen_date.strftime(DATE_FMT) if seen_date else None
                 ))
 
             db.commit()
